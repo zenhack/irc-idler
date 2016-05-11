@@ -11,24 +11,21 @@ import (
 	"zombiezen.com/go/capnproto2/rpc"
 )
 
-func getApi(ctx context.Context) (grain.SandstormApi, error) {
-	////	Eventually it would be nice to get it right from FD #3,
-	////    rather than using sandstorm-http-bridge:
-	//	file := os.NewFile(3, "<sandstorm-api>")
-	//	conn, err := net.FileConn(file)
-	conn, err := net.Dial("unix", "/tmp/sandstorm-api")
+func getApi(ctx context.Context, view grain.UiView) (grain.SandstormApi, error) {
+	file := os.NewFile(3, "<sandstorm-api>")
+	conn, err := net.FileConn(file)
 	if err != nil {
 		return grain.SandstormApi{}, err
 	}
 	transport := rpc.StreamTransport(conn)
-	client := rpc.NewConn(transport).Bootstrap(ctx)
+	client := rpc.NewConn(transport, rpc.MainInterface(view.Client)).Bootstrap(ctx)
 	return grain.SandstormApi{Client: client}, nil
 }
 
 func main() {
 	ctx := context.Background()
 	log.Println("Getting api...")
-	api, err := getApi(ctx)
+	api, err := getApi(ctx, grain.UiView_ServerToClient(UiView{}))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: ", err)
 		os.Exit(1)
