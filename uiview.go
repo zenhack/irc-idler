@@ -1,7 +1,7 @@
 package main
 
 import (
-	"zenhack.net/go/sandstorm/capnp/sandstorm/grain"
+	"zenhack.net/go/sandstorm/capnp/grain"
 )
 
 type UiView struct{}

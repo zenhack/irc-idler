@@ -4,28 +4,14 @@ import (
 	"fmt"
 	"golang.org/x/net/context"
 	"log"
-	"net"
 	"net/http"
 	"os"
-	"zenhack.net/go/sandstorm/capnp/sandstorm/grain"
-	"zombiezen.com/go/capnproto2/rpc"
+	"zenhack.net/go/sandstorm/grain"
 )
-
-func getApi(ctx context.Context, view grain.UiView) (grain.SandstormApi, error) {
-	file := os.NewFile(3, "<sandstorm-api>")
-	conn, err := net.FileConn(file)
-	if err != nil {
-		return grain.SandstormApi{}, err
-	}
-	transport := rpc.StreamTransport(conn)
-	client := rpc.NewConn(transport, rpc.MainInterface(view.Client)).Bootstrap(ctx)
-	return grain.SandstormApi{Client: client}, nil
-}
 
 func main() {
 	ctx := context.Background()
-	log.Println("Getting api...")
-	api, err := getApi(ctx, grain.UiView_ServerToClient(UiView{}))
+	api, err := grain.ConnectAPI(ctx, UiView{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: ", err)
 		os.Exit(1)
