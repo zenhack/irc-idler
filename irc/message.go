@@ -22,7 +22,9 @@ package irc
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
+	"strings"
 )
 
 const (
@@ -39,6 +41,39 @@ type Message struct {
 // A Reader reads Messages from an io.Reader
 type Reader struct {
 	scanner *bufio.Scanner
+}
+
+type Writer struct {
+	w io.Writer
+}
+
+func (w *Writer) WriteMessage(msg *Message) error {
+	text := ""
+	switch len(msg.Params) {
+	case 0:
+		text = msg.Command + "\r\n"
+	case 1:
+		text = fmt.Sprintf("%s :%s\r\n",
+			msg.Command,
+			msg.Params[len(msg.Params)-1])
+	default:
+		text = fmt.Sprintf("%s %s :%s\r\n",
+			msg.Command,
+			strings.Join(msg.Params[:len(msg.Params)-1], " "),
+			msg.Params[len(msg.Params)-1])
+	}
+	if msg.Prefix != "" {
+		text = fmt.Sprintf(":%s %s", msg.Prefix, text)
+	}
+	if len(msg.Params) > 0 {
+		text = fmt.Sprintf(":%s%s", msg.Params[len(msg.Params)-1], text)
+	}
+	_, err := w.w.Write([]byte(text))
+	return err
+}
+
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{w}
 }
 
 // Return a new Reader reading from r.
