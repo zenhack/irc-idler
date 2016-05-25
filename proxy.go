@@ -6,7 +6,8 @@ import (
 	"zenhack.net/go/irc-idler/irc"
 )
 
-func serverToClient(sReader *irc.Reader, cWriter, sWriter *irc.Writer) {
+func serverToClient(client, server net.Conn) {
+	sReader := irc.NewReader(server)
 	for {
 		msg, err := sReader.ReadMessage()
 		if err != nil {
@@ -16,13 +17,13 @@ func serverToClient(sReader *irc.Reader, cWriter, sWriter *irc.Writer) {
 		if msg.Command == "PING" {
 			msg.Command = "PONG"
 			msg.Prefix = ""
-			err = sWriter.WriteMessage(msg)
+			_, err = msg.WriteTo(server)
 			if err != nil {
 				log.Println("Writing PONG to server: ", err)
 				return
 			}
 		} else {
-			err = cWriter.WriteMessage(msg)
+			_, err = msg.WriteTo(client)
 			if err != nil {
 				log.Println("Writing message to client: ", err)
 				return
@@ -31,14 +32,15 @@ func serverToClient(sReader *irc.Reader, cWriter, sWriter *irc.Writer) {
 	}
 }
 
-func clientToServer(cReader *irc.Reader, sWriter *irc.Writer) {
+func clientToServer(server, client net.Conn) {
+	cReader := irc.NewReader(client)
 	for {
 		msg, err := cReader.ReadMessage()
 		if err != nil {
 			log.Println("Reading message from client: ", err)
 			return
 		}
-		err = sWriter.WriteMessage(msg)
+		_, err = msg.WriteTo(server)
 		if err != nil {
 			log.Println("Writing message to server: ", err)
 			return
@@ -49,10 +51,6 @@ func clientToServer(cReader *irc.Reader, sWriter *irc.Writer) {
 func proxy(server, client net.Conn) {
 	defer server.Close()
 	defer client.Close()
-	cReader := irc.NewReader(client)
-	sReader := irc.NewReader(server)
-	cWriter := irc.NewWriter(client)
-	sWriter := irc.NewWriter(server)
-	go serverToClient(sReader, cWriter, sWriter)
-	clientToServer(cReader, sWriter)
+	go serverToClient(client, server)
+	clientToServer(server, client)
 }

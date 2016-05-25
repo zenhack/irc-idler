@@ -38,16 +38,7 @@ type Message struct {
 	Params  []string
 }
 
-// A Reader reads Messages from an io.Reader
-type Reader struct {
-	scanner *bufio.Scanner
-}
-
-type Writer struct {
-	w io.Writer
-}
-
-func (w *Writer) WriteMessage(msg *Message) error {
+func (msg *Message) WriteTo(w io.Writer) (int64, error) {
 	text := ""
 	switch len(msg.Params) {
 	case 0:
@@ -68,12 +59,13 @@ func (w *Writer) WriteMessage(msg *Message) error {
 	if len(msg.Params) > 0 {
 		text = fmt.Sprintf(":%s%s", msg.Params[len(msg.Params)-1], text)
 	}
-	_, err := w.w.Write([]byte(text))
-	return err
+	n, err := w.Write([]byte(text))
+	return int64(n), err
 }
 
-func NewWriter(w io.Writer) *Writer {
-	return &Writer{w}
+// A Reader reads Messages from an io.Reader.
+type Reader struct {
+	scanner *bufio.Scanner
 }
 
 // Return a new Reader reading from r.
