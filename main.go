@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 )
@@ -27,38 +25,6 @@ func main() {
 	if os.Getenv("SANDSTORM") == "1" {
 		sandstormMain()
 	} else {
-		normalMain()
+		traditionalMain()
 	}
-}
-
-func readConfig(filename string) (*Config, error) {
-	var config Config
-	file, err := os.Open(filename)
-	checkFatal(err)
-	defer file.Close()
-	d := json.NewDecoder(file)
-	err = d.Decode(&config)
-	checkFatal(err)
-	return &config, err
-}
-
-func serve(config *Config) {
-	l, err := net.Listen("tcp", config.Listen)
-	checkFatal(err)
-	for {
-		clientConn, err := l.Accept()
-		if err != nil {
-			// TODO: handle this? net/http does some backoff stuff, need to
-			// investigate/understand that better.
-			continue
-		}
-		serverConn, err := net.Dial("tcp", config.Dial)
-		proxy(serverConn, clientConn)
-	}
-}
-
-func normalMain() {
-	config, err := readConfig("config.json")
-	checkFatal(err)
-	serve(config)
 }
