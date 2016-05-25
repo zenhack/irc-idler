@@ -28,14 +28,9 @@ func readConfig(filename string) (*Config, error) {
 func serve(config *Config) {
 	l, err := net.Listen("tcp", config.Listen)
 	checkFatal(err)
-	for {
-		clientConn, err := l.Accept()
-		if err != nil {
-			// TODO: handle this? net/http does some backoff stuff, need to
-			// investigate/understand that better.
-			continue
-		}
-		serverConn, err := net.Dial("tcp", config.Dial)
-		proxy(serverConn, clientConn)
+	proxy := &Proxy{
+		config:   config,
+		listener: l,
 	}
+	proxy.run()
 }
