@@ -56,9 +56,6 @@ func (msg *Message) WriteTo(w io.Writer) (int64, error) {
 	if msg.Prefix != "" {
 		text = fmt.Sprintf(":%s %s", msg.Prefix, text)
 	}
-	if len(msg.Params) > 0 {
-		text = fmt.Sprintf(":%s%s", msg.Params[len(msg.Params)-1], text)
-	}
 	n, err := w.Write([]byte(text))
 	return int64(n), err
 }
