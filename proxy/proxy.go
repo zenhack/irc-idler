@@ -1,4 +1,4 @@
-package main
+package proxy
 
 // Proxy IRC server. It's a state machine, with a similar implementation
 // the lexer Rob Pike describes here:
@@ -20,11 +20,18 @@ type Proxy struct {
 	listener               net.Listener
 	clientConn, serverConn net.Conn
 	clientChan, serverChan <-chan *irc.Message
-	config                 *Config
+	addr                   string // address of IRC server to connect to.
 	err                    error
 }
 
-func (p *Proxy) run() error {
+func NewProxy(l net.Listener, addr string) *Proxy {
+	return &Proxy{
+		listener: l,
+		addr:     addr,
+	}
+}
+
+func (p *Proxy) Run() error {
 	for state := start; state != nil; {
 		state = state(p)
 	}
@@ -39,7 +46,7 @@ func start(p *Proxy) stateFn {
 	}
 	p.clientConn = client
 
-	serverConn, err := net.Dial("tcp", p.config.Dial)
+	serverConn, err := net.Dial("tcp", p.addr)
 	if err != nil {
 		// TODO: try again? backoff?
 		p.clientConn.Close()

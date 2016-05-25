@@ -11,7 +11,7 @@ import (
 	"zenhack.net/go/sandstorm/websession"
 )
 
-func sandstormMain() {
+func main() {
 	ctx := context.Background()
 	api, err := grain.ConnectAPI(ctx, websession.FromHandler(http.DefaultServeMux))
 
