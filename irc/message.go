@@ -38,6 +38,27 @@ type Message struct {
 	Params  []string
 }
 
+type Reader interface {
+	ReadMessage() (*Message, error)
+}
+
+type Writer interface {
+	WriteMessage(m *Message) error
+}
+
+type ioWriter struct {
+	w io.Writer
+}
+
+func NewWriter(w io.Writer) Writer {
+	return &ioWriter{w}
+}
+
+func (w *ioWriter) WriteMessage(m *Message) error {
+	_, err := m.WriteTo(w.w)
+	return err
+}
+
 func (msg *Message) WriteTo(w io.Writer) (int64, error) {
 	text := ""
 	switch len(msg.Params) {
@@ -60,14 +81,14 @@ func (msg *Message) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
-// A Reader reads Messages from an io.Reader.
-type Reader struct {
+// An ioReader reads Messages from an io.Reader.
+type ioReader struct {
 	scanner *bufio.Scanner
 }
 
 // Return a new Reader reading from r.
-func NewReader(r io.Reader) *Reader {
-	ret := &Reader{bufio.NewScanner(r)}
+func NewReader(r io.Reader) Reader {
+	ret := &ioReader{bufio.NewScanner(r)}
 	ret.scanner.Buffer(make([]byte, MaxMessageLen), MaxMessageLen)
 	return ret
 }
@@ -77,7 +98,7 @@ func NewReader(r io.Reader) *Reader {
 // TODO: document errors. Right now just underlying IO errors.
 //
 // TODO: document the extent to which we validate the input.
-func (r *Reader) ReadMessage() (*Message, error) {
+func (r *ioReader) ReadMessage() (*Message, error) {
 	// We use bufio.Scanner to get each line, then parse the line from
 	// a buffer.
 	if !r.scanner.Scan() {
@@ -156,4 +177,23 @@ func parseWord(output, input *bytes.Buffer) error {
 		err = nil
 	}
 	return err
+}
+
+func ReadAll(r Reader) <-chan *Message {
+	ch := make(chan *Message)
+	go func() {
+		for {
+			msg, err := r.ReadMessage()
+			if err != nil {
+				// TODO: would be nice if we were logging the
+				// error somehow (at least if it's not io.EOF).
+				// Don't want a hardcoded logging statement in
+				// library code though; will need to parametrize.
+				break
+			}
+			ch <- msg
+		}
+		close(ch)
+	}()
+	return ch
 }
