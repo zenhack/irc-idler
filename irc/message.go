@@ -19,6 +19,10 @@
 //   application. E.g. message parsing should work regardless of what you're building.
 package irc
 
+// This files defines the basic type for messages, interfaces for
+// reading & writing them, and the obvious wrappers around io.Reader and
+// io.Writer.
+
 import (
 	"bufio"
 	"bytes"
@@ -44,6 +48,11 @@ type Reader interface {
 
 type Writer interface {
 	WriteMessage(m *Message) error
+}
+
+type ReadWriter interface {
+	Reader
+	Writer
 }
 
 type ioWriter struct {
@@ -177,23 +186,4 @@ func parseWord(output, input *bytes.Buffer) error {
 		err = nil
 	}
 	return err
-}
-
-func ReadAll(r Reader) <-chan *Message {
-	ch := make(chan *Message)
-	go func() {
-		for {
-			msg, err := r.ReadMessage()
-			if err != nil {
-				// TODO: would be nice if we were logging the
-				// error somehow (at least if it's not io.EOF).
-				// Don't want a hardcoded logging statement in
-				// library code though; will need to parametrize.
-				break
-			}
-			ch <- msg
-		}
-		close(ch)
-	}()
-	return ch
 }
