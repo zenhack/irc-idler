@@ -17,18 +17,25 @@ import (
 type stateFn func(p *Proxy) stateFn
 
 type Proxy struct {
-	listener                 net.Listener
-	clientClose, serverClose io.Closer
-	clientIO, serverIO       irc.ReadWriter
-	clientChan, serverChan   <-chan *irc.Message
-	addr                     string // address of IRC server to connect to.
-	err                      error
+	listener net.Listener
+	client   *connection
+	server   *connection
+	addr     string // address of IRC server to connect to.
+	err      error
+}
+
+type connection struct {
+	io.Closer
+	irc.ReadWriter
+	Chan <-chan *irc.Message
 }
 
 func NewProxy(l net.Listener, addr string) *Proxy {
 	return &Proxy{
 		listener: l,
 		addr:     addr,
+		client:   &connection{},
+		server:   &connection{},
 	}
 }
 
@@ -52,39 +59,39 @@ func start(p *Proxy) stateFn {
 		p.err = err
 		return cleanUp
 	}
-	p.clientClose = clientConn
-	p.serverClose = serverConn
+	p.client.Closer = clientConn
+	p.server.Closer = serverConn
 
-	p.clientIO = irc.NewReadWriter(clientConn)
-	p.serverIO = irc.AutoPong(irc.NewReadWriter(serverConn))
+	p.client.ReadWriter = irc.NewReadWriter(clientConn)
+	p.server.ReadWriter = irc.AutoPong(irc.NewReadWriter(serverConn))
 
-	p.clientChan = irc.ReadAll(p.clientIO)
-	p.serverChan = irc.ReadAll(p.serverIO)
+	p.client.Chan = irc.ReadAll(p.client)
+	p.server.Chan = irc.ReadAll(p.server)
 	return withClient
 }
 
 func cleanUp(p *Proxy) stateFn {
-	if p.clientClose != nil {
-		p.clientClose.Close()
+	if p.client.Closer != nil {
+		p.client.Close()
 	}
-	if p.serverClose != nil {
-		p.serverClose.Close()
+	if p.server.Closer != nil {
+		p.server.Close()
 	}
 	return nil
 }
 
 func withClient(p *Proxy) stateFn {
 	select {
-	case msg, ok := <-p.serverChan:
+	case msg, ok := <-p.server.Chan:
 		if !ok {
 			return cleanUp
 		}
-		p.err = p.clientIO.WriteMessage(msg)
-	case msg, ok := <-p.clientChan:
+		p.err = p.client.WriteMessage(msg)
+	case msg, ok := <-p.client.Chan:
 		if !ok {
 			return cleanUp
 		}
-		p.err = p.serverIO.WriteMessage(msg)
+		p.err = p.server.WriteMessage(msg)
 	}
 	if p.err != nil {
 		return cleanUp
