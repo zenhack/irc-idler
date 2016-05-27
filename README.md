@@ -35,14 +35,10 @@ The sandstorm version is in <cmd/irc-idler-sandstorm>, the non-sandstorm
 version is in <cmd/irc-idler>. Either executable can be built via standard go
 build.
 
-Notes on the sandstorm build:
-
-* The sandstorm capnproto wrappers require some manual work to build,
-  though this is temporary, see the [README][3] in that repository for
-  details.
-* This repo doesn't have the usual vagrant-spk boilerplate; to work on
-  the sandstorm version, you'll need a box with sandstorm set up in
-  development mode, on which you can run `spk dev` directly.
+Note on the sandstorm build: this repo doesn't have the usual
+vagrant-spk boilerplate; to work on the sandstorm version, you'll need a
+box with sandstorm set up in development mode, on which you can run `spk
+dev` directly.
 
 # License
 
