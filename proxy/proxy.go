@@ -89,12 +89,47 @@ func withClient(p *Proxy) stateFn {
 		p.err = p.client.WriteMessage(msg)
 	case msg, ok := <-p.client.Chan:
 		if !ok {
-			return cleanUp
+			return sansClient
 		}
-		p.err = p.server.WriteMessage(msg)
+		switch msg.Command {
+		case "QUIT":
+			p.client.Close()
+			return sansClient
+		default:
+			p.err = p.server.WriteMessage(msg)
+		}
 	}
 	if p.err != nil {
 		return cleanUp
 	}
 	return withClient
+}
+
+func sansClient(p *Proxy) stateFn {
+	// TODO: This whole thing is super messy and broken in important ways.
+	log := []*irc.Message{}
+	connChan := make(chan net.Conn)
+	go func() {
+		for {
+			conn, err := p.listener.Accept()
+			if err == nil {
+				connChan <- conn
+				break
+			}
+		}
+	}()
+	select {
+	case msg, ok := <-p.server.Chan:
+		if !ok {
+			return cleanUp
+		}
+		log = append(log, msg)
+	case conn := <-connChan:
+		p.client.Closer = conn
+		p.client.ReadWriter = irc.NewReadWriter(conn)
+		p.client.Chan = irc.ReadAll(p.client)
+		// TODO: dump log to the client
+		return withClient
+	}
+	return sansClient
 }
