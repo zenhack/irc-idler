@@ -9,7 +9,7 @@ package proxy
 // returns the next state.
 
 import (
-	"log"
+	"io"
 	"net"
 	"zenhack.net/go/irc-idler/irc"
 )
@@ -17,11 +17,12 @@ import (
 type stateFn func(p *Proxy) stateFn
 
 type Proxy struct {
-	listener               net.Listener
-	clientConn, serverConn net.Conn
-	clientChan, serverChan <-chan *irc.Message
-	addr                   string // address of IRC server to connect to.
-	err                    error
+	listener                 net.Listener
+	clientClose, serverClose io.Closer
+	clientIO, serverIO       irc.ReadWriter
+	clientChan, serverChan   <-chan *irc.Message
+	addr                     string // address of IRC server to connect to.
+	err                      error
 }
 
 func NewProxy(l net.Listener, addr string) *Proxy {
@@ -39,33 +40,35 @@ func (p *Proxy) Run() error {
 }
 
 func start(p *Proxy) stateFn {
-	client, err := p.listener.Accept()
+	clientConn, err := p.listener.Accept()
 	if err != nil {
 		p.err = err
 		return cleanUp
 	}
-	p.clientConn = client
 
 	serverConn, err := net.Dial("tcp", p.addr)
 	if err != nil {
 		// TODO: try again? backoff?
-		p.clientConn.Close()
 		p.err = err
 		return cleanUp
 	}
-	p.serverConn = serverConn
+	p.clientClose = clientConn
+	p.serverClose = serverConn
 
-	p.clientChan = readMessages(p.clientConn)
-	p.serverChan = readMessages(p.serverConn)
+	p.clientIO = irc.NewReadWriter(clientConn)
+	p.serverIO = irc.AutoPong(irc.NewReadWriter(serverConn))
+
+	p.clientChan = irc.ReadAll(p.clientIO)
+	p.serverChan = irc.ReadAll(p.serverIO)
 	return withClient
 }
 
 func cleanUp(p *Proxy) stateFn {
-	if p.clientConn != nil {
-		p.clientConn.Close()
+	if p.clientClose != nil {
+		p.clientClose.Close()
 	}
-	if p.serverConn != nil {
-		p.serverConn.Close()
+	if p.serverClose != nil {
+		p.serverClose.Close()
 	}
 	return nil
 }
@@ -76,56 +79,15 @@ func withClient(p *Proxy) stateFn {
 		if !ok {
 			return cleanUp
 		}
-		return handleServerMessageWithClient(msg, p)
+		p.err = p.clientIO.WriteMessage(msg)
 	case msg, ok := <-p.clientChan:
 		if !ok {
 			return cleanUp
 		}
-		return handleClientMessage(msg, p)
+		p.err = p.serverIO.WriteMessage(msg)
 	}
-}
-
-func readMessages(conn net.Conn) <-chan *irc.Message {
-	ch := make(chan *irc.Message)
-	reader := irc.NewReader(conn)
-	go func() {
-		for {
-			msg, err := reader.ReadMessage()
-			if err != nil {
-				log.Println("Error in readMessages: ", err)
-				break
-			}
-			ch <- msg
-		}
-		close(ch)
-	}()
-	return ch
-}
-
-func handleServerMessageWithClient(msg *irc.Message, p *Proxy) stateFn {
-	var err error
-	switch msg.Command {
-	case "PING":
-		msg.Command = "PONG"
-		msg.Prefix = ""
-		_, err = msg.WriteTo(p.serverConn)
-	default:
-		_, err = msg.WriteTo(p.clientConn)
-	}
-	p.err = err
-	if err != nil {
+	if p.err != nil {
 		return cleanUp
-	} else {
-		return withClient
 	}
-}
-
-func handleClientMessage(msg *irc.Message, p *Proxy) stateFn {
-	_, err := msg.WriteTo(p.serverConn)
-	p.err = err
-	if err != nil {
-		return cleanUp
-	} else {
-		return withClient
-	}
+	return withClient
 }

@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 )
 
 const (
@@ -42,11 +43,17 @@ type Message struct {
 	Params  []string
 }
 
+// A Reader wraps the ReadMessage method
 type Reader interface {
+	// ReadMessage reads a message from the Reader.
+	// This is required to be safe for concurrent readers.
 	ReadMessage() (*Message, error)
 }
 
+// A Writer wraps the WriteMessage method
 type Writer interface {
+	// WriteMessage Writes a message to the Writer.
+	// This is required to be safe for concurrent writers.
 	WriteMessage(m *Message) error
 }
 
@@ -55,15 +62,27 @@ type ReadWriter interface {
 	Writer
 }
 
+type ioReadWriter struct {
+	Reader
+	Writer
+}
+
+func NewReadWriter(rw io.ReadWriter) ReadWriter {
+	return ioReadWriter{NewReader(rw), NewWriter(rw)}
+}
+
 type ioWriter struct {
-	w io.Writer
+	lock sync.Mutex
+	w    io.Writer
 }
 
 func NewWriter(w io.Writer) Writer {
-	return &ioWriter{w}
+	return ioWriter{w: w}
 }
 
-func (w *ioWriter) WriteMessage(m *Message) error {
+func (w ioWriter) WriteMessage(m *Message) error {
+	w.lock.Lock()
+	defer w.lock.Unlock()
 	_, err := m.WriteTo(w.w)
 	return err
 }
@@ -92,12 +111,13 @@ func (msg *Message) WriteTo(w io.Writer) (int64, error) {
 
 // An ioReader reads Messages from an io.Reader.
 type ioReader struct {
+	lock    sync.Mutex
 	scanner *bufio.Scanner
 }
 
 // Return a new Reader reading from r.
 func NewReader(r io.Reader) Reader {
-	ret := &ioReader{bufio.NewScanner(r)}
+	ret := ioReader{scanner: bufio.NewScanner(r)}
 	ret.scanner.Buffer(make([]byte, MaxMessageLen), MaxMessageLen)
 	return ret
 }
@@ -107,7 +127,9 @@ func NewReader(r io.Reader) Reader {
 // TODO: document errors. Right now just underlying IO errors.
 //
 // TODO: document the extent to which we validate the input.
-func (r *ioReader) ReadMessage() (*Message, error) {
+func (r ioReader) ReadMessage() (*Message, error) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	// We use bufio.Scanner to get each line, then parse the line from
 	// a buffer.
 	if !r.scanner.Scan() {
