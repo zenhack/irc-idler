@@ -166,7 +166,19 @@ func logging(p *Proxy) stateFn {
 		p.client.Closer = conn
 		p.client.ReadWriter = irc.NewReadWriter(conn)
 		p.client.Chan = irc.ReadAll(p.client)
-		// TODO: dump log to the client
-		return relaying
+		return dumpLog
 	}
+}
+
+// State: client has reconnected, dumping the log
+func dumpLog(p *Proxy) stateFn {
+	for _, v := range p.log {
+		p.err = p.client.WriteMessage(v)
+		if p.err != nil {
+			// probably a client disconnect; back to logging mode.
+			return logging
+		}
+	}
+	p.log = p.log[:0]
+	return relaying
 }
