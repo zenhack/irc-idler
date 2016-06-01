@@ -10,6 +10,8 @@ package proxy
 
 import (
 	"io"
+	"io/ioutil"
+	"log"
 	"net"
 	"zenhack.net/go/irc-idler/irc"
 )
@@ -26,7 +28,9 @@ type Proxy struct {
 	server     *connection
 	addr       string // address of IRC server to connect to.
 	err        error
-	messagelog []*irc.Message // messages recieved while client is disconnected.
+	messagelog []*irc.Message // IRC messages recieved while client is disconnected.
+
+	logger *log.Logger // Informational logging (nothing to do with messagelog).
 }
 
 type connection struct {
@@ -35,12 +39,24 @@ type connection struct {
 	Chan <-chan *irc.Message
 }
 
-func NewProxy(l net.Listener, addr string) *Proxy {
+// Create a new proxy.
+//
+// parameters:
+//
+// `l` will be used to listen for client connections.
+// `addr` is the tcp address of the server
+// `logger`, if non-nil, will be used for informational logging. Note that the logging
+//  preformed is very noisy; it is mostly meant for debugging.
+func NewProxy(l net.Listener, addr string, logger *log.Logger) *Proxy {
+	if logger == nil {
+		logger = log.New(ioutil.Discard, log.Prefix(), log.Flags())
+	}
 	return &Proxy{
 		listener: l,
 		addr:     addr,
 		client:   &connection{},
 		server:   &connection{},
+		logger:   logger,
 	}
 }
 
@@ -100,6 +116,7 @@ func (p *Proxy) dialServer() {
 // State: starting up. Will accept a client connection and then connect to
 // the server.
 func start(p *Proxy) stateFn {
+	p.logger.Println("Entering start state.")
 	p.acceptClient()
 	if p.err != nil {
 		return cleanUp
@@ -113,6 +130,7 @@ func start(p *Proxy) stateFn {
 
 // State: shutting down. Clean up resources and exit.
 func cleanUp(p *Proxy) stateFn {
+	p.logger.Println("Entering cleanUp state.")
 	if p.client.Closer != nil {
 		p.client.Close()
 	}
@@ -125,6 +143,7 @@ func cleanUp(p *Proxy) stateFn {
 // State: connected to both client and server, relaying messages
 // between the two.
 func relaying(p *Proxy) stateFn {
+	p.logger.Println("Entering relaying state.")
 	select {
 	case msg, ok := <-p.server.Chan:
 		if !ok {
@@ -152,6 +171,7 @@ func relaying(p *Proxy) stateFn {
 // State: client is disconnected; logging messages from the server
 // for later delivery.
 func logging(p *Proxy) stateFn {
+	p.logger.Println("Entering logging state.")
 	p.asyncAccept()
 
 	select {
@@ -172,6 +192,7 @@ func logging(p *Proxy) stateFn {
 
 // State: client has reconnected, dumping the log
 func dumpLog(p *Proxy) stateFn {
+	p.logger.Println("Entering dumpLog state.")
 	for _, v := range p.messagelog {
 		p.err = p.client.WriteMessage(v)
 		if p.err != nil {
