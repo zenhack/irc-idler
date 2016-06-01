@@ -1,6 +1,6 @@
 package proxy
 
-// Proxy IRC server. It's a state machine, with a similar implementation
+// Proxy IRC server. It's a state machine, with a similar implementation to
 // the lexer Rob Pike describes here:
 //
 //     https://youtu.be/WIxQ-KvzwpM?t=735
