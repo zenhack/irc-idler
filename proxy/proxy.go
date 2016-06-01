@@ -30,6 +30,11 @@ type Proxy struct {
 	err        error
 	messagelog []*irc.Message // IRC messages recieved while client is disconnected.
 
+	// Nick on the server. Not always set, only used by the reconnecting. Basically
+	// a hack to be able to give the user the right name in the welcome message on
+	// reconnect:
+	nick string
+
 	logger *log.Logger // Informational logging (nothing to do with messagelog).
 }
 
@@ -212,17 +217,28 @@ func reconnecting(p *Proxy) stateFn {
 		case "QUIT":
 			p.client.Close()
 			return logging
+		case "NICK":
+			if len(msg.Params) == 0 {
+				p.logger.Println("Client sent NICK message with no params.")
+			} else {
+				p.nick = msg.Params[0]
+			}
+			return reconnecting
 		case "USER":
 			// user has sent the last handshake message.
+			p.err = p.client.WriteMessage(&irc.Message{
+				Command: irc.Replies["RPL_WELCOME"],
+				Params:  []string{p.nick},
+			})
+			if p.err != nil {
+				// client disconnect
+				return logging
+			}
 			return dumpLog
 		default:
 			return reconnecting
 		}
 	}
-	if p.err != nil {
-		return cleanUp
-	}
-	return reconnecting
 }
 
 // State: client has reconnected, dumping the log
