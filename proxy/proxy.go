@@ -106,7 +106,7 @@ func start(p *Proxy) stateFn {
 	if p.err != nil {
 		return cleanUp
 	}
-	return withClient
+	return relaying
 }
 
 func cleanUp(p *Proxy) stateFn {
@@ -119,7 +119,7 @@ func cleanUp(p *Proxy) stateFn {
 	return nil
 }
 
-func withClient(p *Proxy) stateFn {
+func relaying(p *Proxy) stateFn {
 	select {
 	case msg, ok := <-p.server.Chan:
 		if !ok {
@@ -128,12 +128,12 @@ func withClient(p *Proxy) stateFn {
 		p.err = p.client.WriteMessage(msg)
 	case msg, ok := <-p.client.Chan:
 		if !ok {
-			return sansClient
+			return logging
 		}
 		switch msg.Command {
 		case "QUIT":
 			p.client.Close()
-			return sansClient
+			return logging
 		default:
 			p.err = p.server.WriteMessage(msg)
 		}
@@ -141,10 +141,10 @@ func withClient(p *Proxy) stateFn {
 	if p.err != nil {
 		return cleanUp
 	}
-	return withClient
+	return relaying
 }
 
-func sansClient(p *Proxy) stateFn {
+func logging(p *Proxy) stateFn {
 	p.asyncAccept()
 
 	select {
@@ -153,13 +153,13 @@ func sansClient(p *Proxy) stateFn {
 			return cleanUp
 		}
 		p.log = append(p.log, msg)
-		return sansClient
+		return logging
 	case conn := <-p.acceptChan:
 		p.acceptChan = nil // reset for next time
 		p.client.Closer = conn
 		p.client.ReadWriter = irc.NewReadWriter(conn)
 		p.client.Chan = irc.ReadAll(p.client)
 		// TODO: dump log to the client
-		return withClient
+		return relaying
 	}
 }
