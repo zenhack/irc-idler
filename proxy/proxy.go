@@ -17,11 +17,13 @@ import (
 type stateFn func(p *Proxy) stateFn
 
 type Proxy struct {
-	listener net.Listener
-	client   *connection
-	server   *connection
-	addr     string // address of IRC server to connect to.
-	err      error
+	listener   net.Listener
+	acceptChan <-chan net.Conn
+	client     *connection
+	server     *connection
+	addr       string // address of IRC server to connect to.
+	err        error
+	log        []*irc.Message
 }
 
 type connection struct {
@@ -55,6 +57,23 @@ func (p *Proxy) acceptClient() {
 	p.client.Closer = clientConn
 	p.client.ReadWriter = irc.NewReadWriter(clientConn)
 	p.client.Chan = irc.ReadAll(p.client)
+}
+
+func (p *Proxy) asyncAccept() {
+	if p.acceptChan != nil {
+		// There's one of these already running; ignore.
+		return
+	}
+	acceptChan := make(chan net.Conn)
+	go func() {
+		conn, err := p.listener.Accept()
+		p.err = err
+		if err == nil {
+			acceptChan <- conn
+		}
+		close(acceptChan)
+	}()
+	p.acceptChan = acceptChan
 }
 
 func (p *Proxy) dialServer() {
@@ -116,30 +135,21 @@ func withClient(p *Proxy) stateFn {
 }
 
 func sansClient(p *Proxy) stateFn {
-	// TODO: This whole thing is super messy and broken in important ways.
-	log := []*irc.Message{}
-	connChan := make(chan net.Conn)
-	go func() {
-		for {
-			conn, err := p.listener.Accept()
-			if err == nil {
-				connChan <- conn
-				break
-			}
-		}
-	}()
+	p.asyncAccept()
+
 	select {
 	case msg, ok := <-p.server.Chan:
 		if !ok {
 			return cleanUp
 		}
-		log = append(log, msg)
-	case conn := <-connChan:
+		p.log = append(p.log, msg)
+		return sansClient
+	case conn := <-p.acceptChan:
+		p.acceptChan = nil
 		p.client.Closer = conn
 		p.client.ReadWriter = irc.NewReadWriter(conn)
 		p.client.Chan = irc.ReadAll(p.client)
 		// TODO: dump log to the client
 		return withClient
 	}
-	return sansClient
 }
