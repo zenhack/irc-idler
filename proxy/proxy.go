@@ -22,11 +22,11 @@ type Proxy struct {
 	//used by asyncAccept; read the comments there:
 	acceptChan <-chan net.Conn
 
-	client *connection
-	server *connection
-	addr   string // address of IRC server to connect to.
-	err    error
-	log    []*irc.Message // messages recieved while client is disconnected.
+	client     *connection
+	server     *connection
+	addr       string // address of IRC server to connect to.
+	err        error
+	messagelog []*irc.Message // messages recieved while client is disconnected.
 }
 
 type connection struct {
@@ -159,7 +159,7 @@ func logging(p *Proxy) stateFn {
 		if !ok {
 			return cleanUp
 		}
-		p.log = append(p.log, msg)
+		p.messagelog = append(p.messagelog, msg)
 		return logging
 	case conn := <-p.acceptChan:
 		p.acceptChan = nil // reset for next time
@@ -172,13 +172,13 @@ func logging(p *Proxy) stateFn {
 
 // State: client has reconnected, dumping the log
 func dumpLog(p *Proxy) stateFn {
-	for _, v := range p.log {
+	for _, v := range p.messagelog {
 		p.err = p.client.WriteMessage(v)
 		if p.err != nil {
 			// probably a client disconnect; back to logging mode.
 			return logging
 		}
 	}
-	p.log = p.log[:0]
+	p.messagelog = p.messagelog[:0]
 	return relaying
 }
