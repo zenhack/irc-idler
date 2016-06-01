@@ -186,8 +186,43 @@ func logging(p *Proxy) stateFn {
 		p.client.Closer = conn
 		p.client.ReadWriter = irc.NewReadWriter(conn)
 		p.client.Chan = irc.ReadAll(p.client)
-		return dumpLog
+		return reconnecting
 	}
+}
+
+// State: client has established a new tcp connection, and is trying to do the
+// handshake again. From the server's standpoint we're already logged in, so we
+// throw out these messages.
+func reconnecting(p *Proxy) stateFn {
+	p.logger.Println("Entering reconnecting state.")
+
+	select {
+	case msg, ok := <-p.server.Chan:
+		if !ok {
+			return cleanUp
+		}
+		// Keep logging things until we've actually finished the reconnect:
+		p.messagelog = append(p.messagelog, msg)
+		return reconnecting
+	case msg, ok := <-p.client.Chan:
+		if !ok {
+			return logging
+		}
+		switch msg.Command {
+		case "QUIT":
+			p.client.Close()
+			return logging
+		case "USER":
+			// user has sent the last handshake message.
+			return dumpLog
+		default:
+			return reconnecting
+		}
+	}
+	if p.err != nil {
+		return cleanUp
+	}
+	return reconnecting
 }
 
 // State: client has reconnected, dumping the log
