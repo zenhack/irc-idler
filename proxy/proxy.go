@@ -46,27 +46,37 @@ func (p *Proxy) Run() error {
 	return p.err
 }
 
-func start(p *Proxy) stateFn {
+func (p *Proxy) acceptClient() {
 	clientConn, err := p.listener.Accept()
+	p.err = err
 	if err != nil {
-		p.err = err
-		return cleanUp
-	}
-
-	serverConn, err := net.Dial("tcp", p.addr)
-	if err != nil {
-		// TODO: try again? backoff?
-		p.err = err
-		return cleanUp
+		return
 	}
 	p.client.Closer = clientConn
-	p.server.Closer = serverConn
-
 	p.client.ReadWriter = irc.NewReadWriter(clientConn)
-	p.server.ReadWriter = irc.AutoPong(irc.NewReadWriter(serverConn))
-
 	p.client.Chan = irc.ReadAll(p.client)
+}
+
+func (p *Proxy) dialServer() {
+	serverConn, err := net.Dial("tcp", p.addr)
+	p.err = err
+	if err != nil {
+		return
+	}
+	p.server.Closer = serverConn
+	p.server.ReadWriter = irc.AutoPong(irc.NewReadWriter(serverConn))
 	p.server.Chan = irc.ReadAll(p.server)
+}
+
+func start(p *Proxy) stateFn {
+	p.acceptClient()
+	if p.err != nil {
+		return cleanUp
+	}
+	p.dialServer()
+	if p.err != nil {
+		return cleanUp
+	}
 	return withClient
 }
 
