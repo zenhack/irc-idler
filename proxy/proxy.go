@@ -97,6 +97,8 @@ func (p *Proxy) dialServer() {
 	p.server.Chan = irc.ReadAll(p.server)
 }
 
+// State: starting up. Will accept a client connection and then connect to
+// the server.
 func start(p *Proxy) stateFn {
 	p.acceptClient()
 	if p.err != nil {
@@ -109,6 +111,7 @@ func start(p *Proxy) stateFn {
 	return relaying
 }
 
+// State: shutting down. Clean up resources and exit.
 func cleanUp(p *Proxy) stateFn {
 	if p.client.Closer != nil {
 		p.client.Close()
@@ -119,6 +122,8 @@ func cleanUp(p *Proxy) stateFn {
 	return nil
 }
 
+// State: connected to both client and server, relaying messages
+// between the two.
 func relaying(p *Proxy) stateFn {
 	select {
 	case msg, ok := <-p.server.Chan:
@@ -144,6 +149,8 @@ func relaying(p *Proxy) stateFn {
 	return relaying
 }
 
+// State: client is disconnected; logging messages from the server
+// for later delivery.
 func logging(p *Proxy) stateFn {
 	p.asyncAccept()
 
