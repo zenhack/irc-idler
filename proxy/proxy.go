@@ -17,13 +17,16 @@ import (
 type stateFn func(p *Proxy) stateFn
 
 type Proxy struct {
-	listener   net.Listener
+	// listens for client connections:
+	listener net.Listener
+	//used by asyncAccept; read the comments there:
 	acceptChan <-chan net.Conn
-	client     *connection
-	server     *connection
-	addr       string // address of IRC server to connect to.
-	err        error
-	log        []*irc.Message
+
+	client *connection
+	server *connection
+	addr   string // address of IRC server to connect to.
+	err    error
+	log    []*irc.Message // messages recieved while client is disconnected.
 }
 
 type connection struct {
@@ -59,6 +62,13 @@ func (p *Proxy) acceptClient() {
 	p.client.Chan = irc.ReadAll(p.client)
 }
 
+// Accept a client connection in a separate goroutine.
+//
+// if p.acceptChan is not nil, this is a noop. otherwise,
+// it create a new channel, assign it to p.acceptChan, and launch a
+// separate goroutine listening for a client connection. When
+// one is recieved, it will be send down p.acceptChan, and the
+// channel will be closed.
 func (p *Proxy) asyncAccept() {
 	if p.acceptChan != nil {
 		// There's one of these already running; ignore.
@@ -145,7 +155,7 @@ func sansClient(p *Proxy) stateFn {
 		p.log = append(p.log, msg)
 		return sansClient
 	case conn := <-p.acceptChan:
-		p.acceptChan = nil
+		p.acceptChan = nil // reset for next time
 		p.client.Closer = conn
 		p.client.ReadWriter = irc.NewReadWriter(conn)
 		p.client.Chan = irc.ReadAll(p.client)
