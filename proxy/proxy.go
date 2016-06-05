@@ -55,6 +55,9 @@ type session struct {
 }
 
 func (c *connection) shutdown() {
+	if c == nil || c.Closer == nil || c.Chan == nil {
+		return
+	}
 	c.Close()
 
 	// Make sure the message queue is empty, otherwise we'll leak the goroutine
@@ -78,11 +81,12 @@ func NewProxy(l net.Listener, addr string, logger *log.Logger) *Proxy {
 		logger = log.New(ioutil.Discard, log.Prefix(), log.Flags())
 	}
 	return &Proxy{
-		listener: l,
-		addr:     addr,
-		client:   &connection{},
-		server:   &connection{},
-		logger:   logger,
+		listener:   l,
+		addr:       addr,
+		client:     &connection{},
+		server:     &connection{},
+		logger:     logger,
+		acceptChan: make(chan net.Conn),
 	}
 }
 
@@ -108,11 +112,13 @@ func (c *connection) setupServer(conn net.Conn) {
 func (p *Proxy) acceptLoop() {
 	for {
 		conn, err := p.listener.Accept()
+		p.logger.Printf("Accept: (%v, %v)", conn, err)
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		p.acceptChan <- conn
+		p.logger.Println("Sent connection.")
 	}
 }
 
@@ -127,25 +133,29 @@ func (p *Proxy) serve() {
 		eventSrc *connection
 	)
 	for {
+		p.logger.Println("Top of serve() loop")
 		select {
 		case msg, ok = <-p.client.Chan:
 			eventSrc = p.client
+			p.logger.Println("Got client event")
 		case msg, ok = <-p.server.Chan:
 			eventSrc = p.server
+			p.logger.Println("Got server event")
 		case clientConn := <-p.acceptChan:
+			p.logger.Println("Got client connection")
 			// A client connected. We boot the old one, if any:
 			p.client.shutdown()
 
 			p.client.setupClient(clientConn)
 
-			// If we were totally disconnected, we need to reconnect to the server:
-			if p.server.phase == disconnectedPhase {
+			// If we're not done with the handshake, restart the server connection too.
+			if p.server.phase != readyPhase {
+				p.server.shutdown()
 				serverConn, err := p.dialServer()
 				if err != nil {
 					// Server connection failed. Boot the client and let
 					// them deal with it:
 					p.client.shutdown()
-					p.server.shutdown()
 				}
 				p.server.setupServer(serverConn)
 			}
@@ -155,9 +165,10 @@ func (p *Proxy) serve() {
 		if err := msg.Validate(); err != nil {
 			// TODO: report the error to the relevant party or such. (what to do if
 			// it's the server?
-			p.logger.Println("Recieved Invalid message: %v\n", err)
+			p.logger.Println("Got invalid message: %v\n", err)
 			continue
 		}
+		p.logger.Printf("Got valid message: %v\n", msg)
 		switch {
 		case eventSrc == p.client && (!ok || msg.Command == "QUIT"):
 			// Client disconnect. Shut down the connection, and if we weren't
