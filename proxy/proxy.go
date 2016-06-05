@@ -227,7 +227,7 @@ func reconnecting(p *Proxy) stateFn {
 		case "USER":
 			// user has sent the last handshake message.
 			p.err = p.client.WriteMessage(&irc.Message{
-				Command: irc.Replies["RPL_WELCOME"],
+				Command: irc.RPL_WELCOME,
 				Params:  []string{p.nick},
 			})
 			if p.err != nil {
