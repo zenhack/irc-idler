@@ -32,5 +32,5 @@ func main() {
 	}
 	l, err := net.Listen("tcp", *laddr)
 	checkFatal(err)
-	checkFatal(proxy.NewProxy(l, *raddr, logger).Run())
+	proxy.NewProxy(l, *raddr, logger).Run()
 }

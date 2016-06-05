@@ -1,13 +1,5 @@
 package proxy
 
-// Proxy IRC server. It's a state machine, with a similar implementation to
-// the lexer Rob Pike describes here:
-//
-//     https://youtu.be/WIxQ-KvzwpM?t=735
-//
-// Briefly, each state is a stateFn, which takes the proxy as an argument, and
-// returns the next state.
-
 import (
 	"io"
 	"io/ioutil"
@@ -20,21 +12,21 @@ import (
 const (
 	// phases of connection setup
 	disconnectedPhase phase = iota // No tcp connection
-	passPhase                      // Waiting for PASS (or NICK) command
-	nickPhase                      // Waiting for NICK command
-	userPhase                      // Waiting for USER command
-	readyPhase                     // handshake complete
+	passPhase                      // Server waiting for PASS (or NICK) command
+	nickPhase                      // Server waiting for NICK command
+	userPhase                      // Server waiting for USER command
+	welcomePhase                   // Client waiting for RPL_WELCOME
+	readyPhase                     // Handshake complete
 )
 
 type phase int
 
-type stateFn func(p *Proxy) stateFn
-
 type Proxy struct {
 	// listens for client connections:
 	listener net.Listener
-	//used by asyncAccept; read the comments there:
-	acceptChan <-chan net.Conn
+
+	// Incomming connections from acceptLoop:
+	acceptChan chan net.Conn
 
 	client     *connection
 	server     *connection
@@ -54,7 +46,12 @@ type connection struct {
 	io.Closer
 	irc.ReadWriter
 	Chan <-chan *irc.Message
+	session
+}
+
+type session struct {
 	phase
+	nick string
 }
 
 func (c *connection) shutdown() {
@@ -65,7 +62,7 @@ func (c *connection) shutdown() {
 		_, ok = <-c.Chan
 	}
 
-	*c = &connection{}
+	*c = connection{}
 }
 
 // Create a new proxy.
@@ -112,7 +109,7 @@ func (p *Proxy) acceptLoop() {
 	for {
 		conn, err := p.listener.Accept()
 		if err != nil {
-			time.Sleep(0.1 * time.Second)
+			time.Sleep(1 * time.Second)
 			continue
 		}
 		p.acceptChan <- conn
@@ -129,7 +126,6 @@ func (p *Proxy) serve() {
 		ok       bool
 		eventSrc *connection
 	)
-	p.asyncAccept()
 	for {
 		select {
 		case msg, ok = <-p.client.Chan:
@@ -163,158 +159,73 @@ func (p *Proxy) serve() {
 			continue
 		}
 		switch {
-		case eventSrc == p.client && !ok:
-			// Client disconnected
+		case eventSrc == p.client && (!ok || msg.Command == "QUIT"):
+			// Client disconnect. Shut down the connection, and if we weren't
+			// done with the handshake, close te server connection too.
 			p.client.shutdown()
+			if p.server.phase != readyPhase {
+				p.server.shutdown()
+			}
 		case eventSrc == p.server && !ok:
 			// Server disconnect. We boot the client and start all over.
 			// TODO: might be nice to attempt a reconnect with cached credentials.
 			p.client.shutdown()
 			p.server.shutdown()
-		case eventSrc == p.client && p.client.phase == passPhase:
-			switch msg.Command {
-			case "PASS":
-				p.logger.Println("TODO (PASS): handle PASS messages.")
-			case "NICK":
-				p.logger.Println("TODO (PASS): handle NICK messages.")
+		case eventSrc == p.client && p.client.phase == readyPhase:
+			err := p.server.WriteMessage(msg)
+			if err != nil {
+				// server disconnect
+				p.server.shutdown()
+				p.client.shutdown()
 			}
-		}
-	}
-}
-
-// State: starting up. Will accept a client connection and then connect to
-// the server.
-func start(p *Proxy) stateFn {
-	p.logger.Println("Entering start state.")
-	p.acceptClient()
-	if p.err != nil {
-		return cleanUp
-	}
-	p.dialServer()
-	if p.err != nil {
-		return cleanUp
-	}
-	return relaying
-}
-
-// State: shutting down. Clean up resources and exit.
-func cleanUp(p *Proxy) stateFn {
-	p.logger.Println("Entering cleanUp state.")
-	if p.client.Closer != nil {
-		p.client.Close()
-	}
-	if p.server.Closer != nil {
-		p.server.Close()
-	}
-	return nil
-}
-
-// State: connected to both client and server, relaying messages
-// between the two.
-func relaying(p *Proxy) stateFn {
-	p.logger.Println("Entering relaying state.")
-	select {
-	case msg, ok := <-p.server.Chan:
-		if !ok {
-			return cleanUp
-		}
-		p.err = p.client.WriteMessage(msg)
-	case msg, ok := <-p.client.Chan:
-		if !ok {
-			return logging
-		}
-		switch msg.Command {
-		case "QUIT":
-			p.client.Close()
-			return logging
-		default:
-			p.err = p.server.WriteMessage(msg)
-		}
-	}
-	if p.err != nil {
-		return cleanUp
-	}
-	return relaying
-}
-
-// State: client is disconnected; logging messages from the server
-// for later delivery.
-func logging(p *Proxy) stateFn {
-	p.logger.Println("Entering logging state.")
-	p.asyncAccept()
-
-	select {
-	case msg, ok := <-p.server.Chan:
-		if !ok {
-			return cleanUp
-		}
-		p.messagelog = append(p.messagelog, msg)
-		return logging
-	case conn := <-p.acceptChan:
-		p.acceptChan = nil // reset for next time
-		p.client.Closer = conn
-		p.client.ReadWriter = irc.NewReadWriter(conn)
-		p.client.Chan = irc.ReadAll(p.client)
-		return reconnecting
-	}
-}
-
-// State: client has established a new tcp connection, and is trying to do the
-// handshake again. From the server's standpoint we're already logged in, so we
-// throw out these messages.
-func reconnecting(p *Proxy) stateFn {
-	p.logger.Println("Entering reconnecting state.")
-
-	select {
-	case msg, ok := <-p.server.Chan:
-		if !ok {
-			return cleanUp
-		}
-		// Keep logging things until we've actually finished the reconnect:
-		p.messagelog = append(p.messagelog, msg)
-		return reconnecting
-	case msg, ok := <-p.client.Chan:
-		if !ok {
-			return logging
-		}
-		switch msg.Command {
-		case "QUIT":
-			p.client.Close()
-			return logging
-		case "NICK":
-			if len(msg.Params) == 0 {
-				p.logger.Println("Client sent NICK message with no params.")
-			} else {
-				p.nick = msg.Params[0]
+		case eventSrc == p.server && p.client.phase == readyPhase:
+			err := p.client.WriteMessage(msg)
+			if err != nil {
+				// client disconnect. Make sure to log te dropped message.
+				p.client.shutdown()
+				p.messagelog = append(p.messagelog, msg)
 			}
-			return reconnecting
-		case "USER":
-			// user has sent the last handshake message.
-			p.err = p.client.WriteMessage(&irc.Message{
+		case eventSrc == p.client && p.client.phase == passPhase && msg.Command == "NICK":
+			// FIXME: This logic is wrong.
+			p.client.session.nick = msg.Params[0]
+			p.server.session.nick = msg.Params[0]
+			err := p.server.WriteMessage(msg)
+			if err != nil {
+				p.logger.Printf("Failed to write message to server: %v\n", err)
+				p.client.shutdown()
+				p.server.shutdown()
+				continue
+			}
+			p.client.phase = userPhase
+		case eventSrc == p.client && p.client.phase == userPhase && msg.Command == "USER":
+			// FIXME: this is dubious at best
+			// user has sent the last handshake message. First give them the welcome:
+			err := p.client.WriteMessage(&irc.Message{
 				Command: irc.RPL_WELCOME,
-				Params:  []string{p.nick},
+				Params:  []string{p.server.session.nick},
 			})
-			if p.err != nil {
-				// client disconnect
-				return logging
+			if err != nil {
+				p.client.shutdown()
+				continue
 			}
-			return dumpLog
-		default:
-			return reconnecting
-		}
-	}
-}
 
-// State: client has reconnected, dumping the log
-func dumpLog(p *Proxy) stateFn {
-	p.logger.Println("Entering dumpLog state.")
-	for _, v := range p.messagelog {
-		p.err = p.client.WriteMessage(v)
-		if p.err != nil {
-			// probably a client disconnect; back to logging mode.
-			return logging
+			// then replay the message log:
+			for _, v := range p.messagelog {
+				err = p.client.WriteMessage(v)
+				if err != nil {
+					// client disconnect; back to logging.
+					p.client.shutdown()
+					break
+				}
+			}
+			if err == nil {
+				// replaying the log completed successfully; clear it and
+				// move the client to the next phase.
+				p.messagelog = p.messagelog[:0]
+				p.client.phase = readyPhase
+			}
+		case eventSrc == p.server && p.client.phase == disconnectedPhase:
+			p.messagelog = append(p.messagelog, msg)
 		}
 	}
-	p.messagelog = p.messagelog[:0]
-	return relaying
 }
