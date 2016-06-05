@@ -13,8 +13,20 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"time"
 	"zenhack.net/go/irc-idler/irc"
 )
+
+const (
+	// phases of connection setup
+	disconnectedPhase phase = iota // No tcp connection
+	passPhase                      // Waiting for PASS (or NICK) command
+	nickPhase                      // Waiting for NICK command
+	userPhase                      // Waiting for USER command
+	readyPhase                     // handshake complete
+)
+
+type phase int
 
 type stateFn func(p *Proxy) stateFn
 
@@ -42,6 +54,18 @@ type connection struct {
 	io.Closer
 	irc.ReadWriter
 	Chan <-chan *irc.Message
+	phase
+}
+
+func (c *connection) shutdown() {
+	c.Close()
+
+	// Make sure the message queue is empty, otherwise we'll leak the goroutine
+	for ok := true; c.Chan != nil && ok; {
+		_, ok = <-c.Chan
+	}
+
+	*c = &connection{}
 }
 
 // Create a new proxy.
@@ -65,57 +89,97 @@ func NewProxy(l net.Listener, addr string, logger *log.Logger) *Proxy {
 	}
 }
 
-func (p *Proxy) Run() error {
-	for state := start; state != nil; {
-		state = state(p)
-	}
-	return p.err
+func (p *Proxy) Run() {
+	go p.acceptLoop()
+	p.serve()
 }
 
-func (p *Proxy) acceptClient() {
-	clientConn, err := p.listener.Accept()
-	p.err = err
-	if err != nil {
-		return
-	}
-	p.client.Closer = clientConn
-	p.client.ReadWriter = irc.NewReadWriter(clientConn)
-	p.client.Chan = irc.ReadAll(p.client)
+func (c *connection) setupClient(conn net.Conn) {
+	c.Closer = conn
+	c.ReadWriter = irc.NewReadWriter(conn)
+	c.Chan = irc.ReadAll(c)
+	c.phase = passPhase
 }
 
-// Accept a client connection in a separate goroutine.
-//
-// if p.acceptChan is not nil, this is a noop. otherwise,
-// it create a new channel, assign it to p.acceptChan, and launch a
-// separate goroutine listening for a client connection. When
-// one is recieved, it will be send down p.acceptChan, and the
-// channel will be closed.
-func (p *Proxy) asyncAccept() {
-	if p.acceptChan != nil {
-		// There's one of these already running; ignore.
-		return
-	}
-	acceptChan := make(chan net.Conn)
-	go func() {
+func (c *connection) setupServer(conn net.Conn) {
+	c.Closer = conn
+	c.ReadWriter = irc.AutoPong(irc.NewReadWriter(conn))
+	c.Chan = irc.ReadAll(c)
+	c.phase = passPhase
+}
+
+func (p *Proxy) acceptLoop() {
+	for {
 		conn, err := p.listener.Accept()
-		p.err = err
-		if err == nil {
-			acceptChan <- conn
+		if err != nil {
+			time.Sleep(0.1 * time.Second)
+			continue
 		}
-		close(acceptChan)
-	}()
-	p.acceptChan = acceptChan
+		p.acceptChan <- conn
+	}
 }
 
-func (p *Proxy) dialServer() {
-	serverConn, err := net.Dial("tcp", p.addr)
-	p.err = err
-	if err != nil {
-		return
+func (p *Proxy) dialServer() (net.Conn, error) {
+	return net.Dial("tcp", p.addr)
+}
+
+func (p *Proxy) serve() {
+	var (
+		msg      *irc.Message
+		ok       bool
+		eventSrc *connection
+	)
+	p.asyncAccept()
+	for {
+		select {
+		case msg, ok = <-p.client.Chan:
+			eventSrc = p.client
+		case msg, ok = <-p.server.Chan:
+			eventSrc = p.server
+		case clientConn := <-p.acceptChan:
+			// A client connected. We boot the old one, if any:
+			p.client.shutdown()
+
+			p.client.setupClient(clientConn)
+
+			// If we were totally disconnected, we need to reconnect to the server:
+			if p.server.phase == disconnectedPhase {
+				serverConn, err := p.dialServer()
+				if err != nil {
+					// Server connection failed. Boot the client and let
+					// them deal with it:
+					p.client.shutdown()
+					p.server.shutdown()
+				}
+				p.server.setupServer(serverConn)
+			}
+			continue
+		}
+
+		if err := msg.Validate(); err != nil {
+			// TODO: report the error to the relevant party or such. (what to do if
+			// it's the server?
+			p.logger.Println("Recieved Invalid message: %v\n", err)
+			continue
+		}
+		switch {
+		case eventSrc == p.client && !ok:
+			// Client disconnected
+			p.client.shutdown()
+		case eventSrc == p.server && !ok:
+			// Server disconnect. We boot the client and start all over.
+			// TODO: might be nice to attempt a reconnect with cached credentials.
+			p.client.shutdown()
+			p.server.shutdown()
+		case eventSrc == p.client && p.client.phase == passPhase:
+			switch msg.Command {
+			case "PASS":
+				p.logger.Println("TODO (PASS): handle PASS messages.")
+			case "NICK":
+				p.logger.Println("TODO (PASS): handle NICK messages.")
+			}
+		}
 	}
-	p.server.Closer = serverConn
-	p.server.ReadWriter = irc.AutoPong(irc.NewReadWriter(serverConn))
-	p.server.Chan = irc.ReadAll(p.server)
 }
 
 // State: starting up. Will accept a client connection and then connect to
