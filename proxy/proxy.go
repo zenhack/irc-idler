@@ -49,11 +49,14 @@ type connection struct {
 	session
 }
 
+// Information about the state of the connection. Note that we store one of these
+// indepentently for both client and server; their views may not always align.
 type session struct {
 	phase
-	nick string
+	nick string // User's current nick.
 }
 
+// Tear down the connection. If it is not currently active, this is a noop.
 func (c *connection) shutdown() {
 	if c == nil || c.Closer == nil || c.Chan == nil {
 		return
