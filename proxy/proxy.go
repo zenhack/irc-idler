@@ -285,4 +285,5 @@ func (p *Proxy) replayLog() {
 			return
 		}
 	}
+	p.messagelog = p.messagelog[:0]
 }
