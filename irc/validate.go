@@ -1,36 +1,58 @@
 package irc
 
-import (
-	"errors"
-)
+// A wrapper around Message that implements the error interface.
+//
+// This allows it to be used as an error, and also to be a reply for erroneous
+// messages sent by peers.
+type MessageError Message
 
-var (
-	// Errors for Validate. TODO: would be nice to define a type implementing
-	// error that provides a suitable irc-protocol error message, so users
-	// of the library can in many cases just send back the error.
-	E_NO_COMMAND      = errors.New("Message has no command")
-	E_TOO_MANY_PARAMS = errors.New("Message has too many arguments")
-	E_TOO_FEW_PARAMS  = errors.New("Message has too few arguments")
-
-	// This should never happen with a message we're reading off the wire:
-	E_PARAMS_IS_NIL = errors.New("Params is nil!")
-)
-
-var minParams = map[string]int{
-	"PASS": 1,
-	"NICK": 1,
+func (me *MessageError) Error() string {
+	return me.String()
 }
 
-func (m *Message) Validate() error {
+func (me *MessageError) String() string {
+	m := (*Message)(me)
+	return m.String()
+}
+
+var minParams = map[string]int{
+	"PASS":      1,
+	"NICK":      1,
+	"USER":      4,
+	RPL_WELCOME: 1, // XXX: maybe 2 according to the spec? 2nd is for humans
+}
+
+// Validate the message m. This performs various checks:
+//
+// * A command is supplied
+// * Minimum number of arguments for the command are supplied, if the command
+//   is known.
+// * The number of parameters does not exceed the limit imposed by the rfc (15).
+//
+// Returns nil for a valid message. For an invalid message, return a suitable
+// reply error message.
+//
+// Note that this method does not check for errors that cannot occur in a message
+// read off the wire, e.g. Params being nil (as opposed to []string{}).
+func (m *Message) Validate() *MessageError {
 	switch {
-	case m.Params == nil:
-		return E_PARAMS_IS_NIL
 	case m.Command == "":
-		return E_NO_COMMAND
-	case len(m.Params) > 15: // TODO: double check the RFC; is it > or >=?
-		return E_TOO_MANY_PARAMS
+		return &MessageError{
+			Command: ERR_UNKNOWNCOMMAND,
+			Params:  []string{"Unknown command: \"\""},
+		}
+	case len(m.Params) > 15:
+		// XXX: ERR_UNKNOWNCOMMAND isn't really a good fit for this, but the RFC
+		// doesn't seem to define someting obviously better.
+		return &MessageError{
+			Command: ERR_UNKNOWNCOMMAND,
+			Params:  []string{"Too many parameters (max 15)"},
+		}
 	case len(m.Params) < minParams[m.Command]:
-		return E_TOO_FEW_PARAMS
+		return &MessageError{
+			Command: ERR_NEEDMOREPARAMS,
+			Params:  []string{"Not enough parameters"},
+		}
 	}
 	return nil
 }

@@ -127,20 +127,15 @@ func (p *Proxy) dialServer() (net.Conn, error) {
 }
 
 func (p *Proxy) serve() {
-	var (
-		msg      *irc.Message
-		ok       bool
-		eventSrc *connection
-	)
 	for {
 		p.logger.Println("Top of serve() loop")
 		select {
-		case msg, ok = <-p.client.Chan:
-			eventSrc = p.client
+		case msg, ok := <-p.client.Chan:
 			p.logger.Println("Got client event")
-		case msg, ok = <-p.server.Chan:
-			eventSrc = p.server
+			p.handleClientEvent(msg, ok)
+		case msg, ok := <-p.server.Chan:
 			p.logger.Println("Got server event")
+			p.handleServerEvent(msg, ok)
 		case clientConn := <-p.acceptChan:
 			p.logger.Println("Got client connection")
 			// A client connected. We boot the old one, if any:
@@ -161,82 +156,130 @@ func (p *Proxy) serve() {
 			}
 			continue
 		}
+	}
+}
 
+func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
+	if ok {
 		if err := msg.Validate(); err != nil {
-			// TODO: report the error to the relevant party or such. (what to do if
-			// it's the server?
-			p.logger.Println("Got invalid message: %v\n", err)
-			continue
+			p.client.WriteMessage((*irc.Message)(err))
+			p.dropClient()
 		}
-		p.logger.Printf("Got valid message: %v\n", msg)
-		switch {
-		case eventSrc == p.client && (!ok || msg.Command == "QUIT"):
-			// Client disconnect. Shut down the connection, and if we weren't
-			// done with the handshake, close te server connection too.
-			p.client.shutdown()
-			if p.server.phase != readyPhase {
-				p.server.shutdown()
+	}
+
+	phase := &p.client.phase
+	switch {
+	case !ok || msg.Command == "QUIT":
+		p.dropClient()
+	case *phase == passPhase && msg.Command == "PASS":
+		if p.server.phase == passPhase {
+			// FIXME: how do we advance the server phase? We shouldn't assume
+			// the server does this automatically.
+			if err := p.server.WriteMessage(msg); err != nil {
+				p.reset()
+				return
 			}
-		case eventSrc == p.server && !ok:
-			// Server disconnect. We boot the client and start all over.
-			// TODO: might be nice to attempt a reconnect with cached credentials.
-			p.client.shutdown()
-			p.server.shutdown()
-		case eventSrc == p.client && p.client.phase == readyPhase:
-			err := p.server.WriteMessage(msg)
-			if err != nil {
-				// server disconnect
-				p.server.shutdown()
-				p.client.shutdown()
-			}
-		case eventSrc == p.server && p.client.phase == readyPhase:
-			err := p.client.WriteMessage(msg)
-			if err != nil {
-				// client disconnect. Make sure to log te dropped message.
-				p.client.shutdown()
-				p.messagelog = append(p.messagelog, msg)
-			}
-		case eventSrc == p.client && p.client.phase == passPhase && msg.Command == "NICK":
-			// FIXME: This logic is wrong.
-			p.client.session.nick = msg.Params[0]
-			p.server.session.nick = msg.Params[0]
-			err := p.server.WriteMessage(msg)
-			if err != nil {
-				p.logger.Printf("Failed to write message to server: %v\n", err)
-				p.client.shutdown()
-				p.server.shutdown()
-				continue
-			}
-			p.client.phase = userPhase
-		case eventSrc == p.client && p.client.phase == userPhase && msg.Command == "USER":
-			// FIXME: this is dubious at best
-			// user has sent the last handshake message. First give them the welcome:
+		}
+		*phase = nickPhase
+	case *phase == passPhase && msg.Command == "NICK":
+		*phase = nickPhase
+		fallthrough
+	case (*phase == nickPhase || *phase == userPhase) && msg.Command == "NICK":
+		// FIXME: we should check if the server is done with the handshake and thinks we
+		// have a different nick.
+		if err := p.server.WriteMessage(msg); err != nil {
+			p.reset()
+		}
+		*phase = userPhase
+		// NOTE: we do *not* set the session's nick field now; that
+		// happens when the server replies.
+		if p.server.phase == readyPhase {
+			// Server already thinks we're done; it won't send the welcome message,
+			// so we need to do it ourselves.
 			err := p.client.WriteMessage(&irc.Message{
 				Command: irc.RPL_WELCOME,
 				Params:  []string{p.server.session.nick},
 			})
 			if err != nil {
-				p.client.shutdown()
-				continue
+				p.dropClient()
 			}
+			*phase = readyPhase
+			p.replayLog()
+		}
+	case *phase == userPhase && msg.Command == "USER":
+		if err := p.server.WriteMessage(msg); err != nil {
+			p.reset()
+		}
+		*phase = welcomePhase
+	case *phase == readyPhase:
+		// TODO: we should restrict the list of commands used here to known-safe.
+		// We also need to inspect a lot of these and adjust our own state.
+		if err := p.server.WriteMessage(msg); err != nil {
+			p.reset()
+		}
+	}
+}
 
-			// then replay the message log:
-			for _, v := range p.messagelog {
-				err = p.client.WriteMessage(v)
-				if err != nil {
-					// client disconnect; back to logging.
-					p.client.shutdown()
-					break
-				}
-			}
-			if err == nil {
-				// replaying the log completed successfully; clear it and
-				// move the client to the next phase.
-				p.messagelog = p.messagelog[:0]
-				p.client.phase = readyPhase
-			}
-		case eventSrc == p.server && p.client.phase == disconnectedPhase:
-			p.messagelog = append(p.messagelog, msg)
+func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
+	phase := &p.server.phase
+	session := &p.server.session
+	if ok {
+		if err := msg.Validate(); err != nil {
+			p.logger.Printf("Got an invalid message from server: %q (error: %q),"+
+				"disconnecting.\n", msg, err)
+			p.reset()
+		}
+	}
+	switch {
+	case !ok:
+		// Server disconnect. We boot the client and start all over.
+		// TODO: might be nice to attempt a reconnect with cached credentials.
+		p.reset()
+	case msg.Command == irc.RPL_WELCOME:
+		session.nick = msg.Params[0]
+		*phase = readyPhase
+		if err := p.client.WriteMessage(msg); err != nil {
+			p.dropClient()
+			return
+		}
+		p.client.phase = readyPhase
+		p.client.session.nick = session.nick
+	case p.client.phase != readyPhase:
+		p.logMessage(msg)
+	default:
+		// TODO: be a bit more methodical; there's probably a pretty finite list
+		// of things that can come through, and we want to make sure nothing is
+		// going to get us out of sync with the client.
+		if err := p.client.WriteMessage(msg); err != nil {
+			p.logMessage(msg)
+			p.dropClient()
+		}
+	}
+}
+
+// Disconnect the client. If the handshake isn't done, disconnect the server too.
+func (p *Proxy) dropClient() {
+	p.client.shutdown()
+	if p.server.phase != readyPhase {
+		p.server.shutdown()
+	}
+}
+
+func (p *Proxy) reset() {
+	p.client.shutdown()
+	p.server.shutdown()
+}
+
+func (p *Proxy) logMessage(m *irc.Message) {
+	p.messagelog = append(p.messagelog, m)
+}
+
+func (p *Proxy) replayLog() {
+	for _, v := range p.messagelog {
+		err := p.client.WriteMessage(v)
+		if err != nil {
+			p.dropClient()
+			return
 		}
 	}
 }

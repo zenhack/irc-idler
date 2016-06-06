@@ -109,6 +109,12 @@ func (msg *Message) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
+func (msg *Message) String() string {
+	buf := &bytes.Buffer{}
+	msg.WriteTo(buf)
+	return buf.String()
+}
+
 // An ioReader reads Messages from an io.Reader.
 type ioReader struct {
 	lock    sync.Mutex
