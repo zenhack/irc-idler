@@ -115,13 +115,13 @@ func (c *connection) setupServer(conn net.Conn) {
 func (p *Proxy) acceptLoop() {
 	for {
 		conn, err := p.listener.Accept()
-		p.logger.Printf("Accept: (%v, %v)", conn, err)
+		p.logger.Printf("acceptLoop(): Accept: (%v, %v)", conn, err)
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		p.acceptChan <- conn
-		p.logger.Println("Sent connection.")
+		p.logger.Println("acceptLoop(): Sent connection.")
 	}
 }
 
@@ -131,16 +131,16 @@ func (p *Proxy) dialServer() (net.Conn, error) {
 
 func (p *Proxy) serve() {
 	for {
-		p.logger.Println("Top of serve() loop")
+		p.logger.Println("serve(): Top of loop")
 		select {
 		case msg, ok := <-p.client.Chan:
-			p.logger.Println("Got client event")
+			p.logger.Println("serve(): Got client event")
 			p.handleClientEvent(msg, ok)
 		case msg, ok := <-p.server.Chan:
-			p.logger.Println("Got server event")
+			p.logger.Println("serve(): Got server event")
 			p.handleServerEvent(msg, ok)
 		case clientConn := <-p.acceptChan:
-			p.logger.Println("Got client connection")
+			p.logger.Println("serve(): Got client connection")
 			// A client connected. We boot the old one, if any:
 			p.client.shutdown()
 
@@ -164,6 +164,7 @@ func (p *Proxy) serve() {
 
 func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	if ok {
+		p.logger.Printf("handleClientEvent(): Recieved message: %q\n", msg)
 		if err := msg.Validate(); err != nil {
 			p.client.WriteMessage((*irc.Message)(err))
 			p.dropClient()
@@ -228,10 +229,11 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	session := &p.server.session
 	if ok {
 		if err := msg.Validate(); err != nil {
-			p.logger.Printf("Got an invalid message from server: %q (error: %q),"+
-				"disconnecting.\n", msg, err)
+			p.logger.Printf("handleServerEvent(): Got an invalid message"+
+				"from server: %q (error: %q), disconnecting.\n", msg, err)
 			p.reset()
 		}
+		p.logger.Printf("handleServertEvent(): RecievedMessage: %q\n", msg)
 	}
 	switch {
 	case !ok:
