@@ -98,16 +98,9 @@ func (p *Proxy) Run() {
 	p.serve()
 }
 
-func (c *connection) setupClient(conn net.Conn) {
+func (c *connection) setup(conn net.Conn) {
 	c.Closer = conn
 	c.ReadWriter = irc.NewReadWriter(conn)
-	c.Chan = irc.ReadAll(c)
-	c.phase = passPhase
-}
-
-func (c *connection) setupServer(conn net.Conn) {
-	c.Closer = conn
-	c.ReadWriter = irc.AutoPong(irc.NewReadWriter(conn))
 	c.Chan = irc.ReadAll(c)
 	c.phase = passPhase
 }
@@ -144,7 +137,7 @@ func (p *Proxy) serve() {
 			// A client connected. We boot the old one, if any:
 			p.client.shutdown()
 
-			p.client.setupClient(clientConn)
+			p.client.setup(clientConn)
 
 			// If we're not done with the handshake, restart the server connection too.
 			if p.server.phase != readyPhase {
@@ -155,7 +148,7 @@ func (p *Proxy) serve() {
 					// them deal with it:
 					p.client.shutdown()
 				}
-				p.server.setupServer(serverConn)
+				p.server.setup(serverConn)
 			}
 			continue
 		}
@@ -240,6 +233,12 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// Server disconnect. We boot the client and start all over.
 		// TODO: might be nice to attempt a reconnect with cached credentials.
 		p.reset()
+	case msg.Command == "PING":
+		msg.Prefix = ""
+		msg.Command = "PONG"
+		if err := p.server.WriteMessage(msg); err != nil {
+			p.reset()
+		}
 	case msg.Command == irc.RPL_WELCOME:
 		session.nick = msg.Params[0]
 		*phase = readyPhase
