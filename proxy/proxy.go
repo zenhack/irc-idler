@@ -118,6 +118,28 @@ func (p *Proxy) acceptLoop() {
 	}
 }
 
+// Send a message to the server. On failure, call p.reset()
+func (p *Proxy) sendServer(msg *irc.Message) error {
+	p.logger.Printf("sendServer(): sending message: %q\n", msg)
+	err := p.server.WriteMessage(msg)
+	if err != nil {
+		p.logger.Printf("sendServer(): error: %v.\n")
+		p.reset()
+	}
+	return err
+}
+
+// Send a message to the client. On failure, call p.dropClient()
+func (p *Proxy) sendClient(msg *irc.Message) error {
+	p.logger.Printf("sendClient(): sending message: %q\n", msg)
+	err := p.client.WriteMessage(msg)
+	if err != nil {
+		p.logger.Printf("sendClient(): error: %v.\n")
+		p.dropClient()
+	}
+	return err
+}
+
 func (p *Proxy) dialServer() (net.Conn, error) {
 	return net.Dial("tcp", p.addr)
 }
@@ -159,7 +181,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	if ok {
 		p.logger.Printf("handleClientEvent(): Recieved message: %q\n", msg)
 		if err := msg.Validate(); err != nil {
-			p.client.WriteMessage((*irc.Message)(err))
+			p.sendClient((*irc.Message)(err))
 			p.dropClient()
 		}
 	}
@@ -172,8 +194,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		if p.server.phase == passPhase {
 			// FIXME: how do we advance the server phase? We shouldn't assume
 			// the server does this automatically.
-			if err := p.server.WriteMessage(msg); err != nil {
-				p.reset()
+			if p.sendServer(msg) != nil {
 				return
 			}
 		}
@@ -184,25 +205,10 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	case *phase == nickPhase && msg.Command == "NICK":
 		// FIXME: we should check if the server is done with the handshake and thinks we
 		// have a different nick.
-		if err := p.server.WriteMessage(msg); err != nil {
-			p.reset()
-		}
 		*phase = userPhase
+		p.sendServer(msg)
 		// NOTE: we do *not* set the session's nick field now; that
 		// happens when the server replies.
-		if p.server.phase == readyPhase {
-			// Server already thinks we're done; it won't send the welcome message,
-			// so we need to do it ourselves.
-			err := p.client.WriteMessage(&irc.Message{
-				Command: irc.RPL_WELCOME,
-				Params:  []string{p.server.session.nick},
-			})
-			if err != nil {
-				p.dropClient()
-			}
-			*phase = readyPhase
-			p.replayLog()
-		}
 	case *phase < userPhase && msg.Command == "USER":
 		// XXX: The client is doing something non-compliant; USER messages are only
 		// legal immediately after a NICK message. Unfortunately, Pidgin sends these in
@@ -218,27 +224,36 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		// proceed to the next phase. The server may recieve an extra NICK message, but most
 		// likely that will be fine, since setting the NICK once the connection is ready
 		// should be valid.
-		err := p.server.WriteMessage(&irc.Message{
+		*phase = userPhase
+		err := p.sendServer(&irc.Message{
 			Command: "NICK",
 			Params:  msg.Params[:1],
 		})
 		if err != nil {
-			// server disconnect
-			p.reset()
+			return
 		}
-		*phase = userPhase
 		fallthrough
 	case *phase == userPhase && msg.Command == "USER":
-		if err := p.server.WriteMessage(msg); err != nil {
-			p.reset()
-		}
 		*phase = welcomePhase
+		if p.server.phase != readyPhase {
+			// We only send this if the server is expecting it.
+			p.sendServer(msg)
+		} else {
+			// Server already thinks we're done; it won't send the welcome message,
+			// so we need to do it ourselves.
+			err := p.sendClient(&irc.Message{
+				Command: irc.RPL_WELCOME,
+				Params:  []string{p.server.session.nick},
+			})
+			if err == nil {
+				*phase = readyPhase
+				p.replayLog()
+			}
+		}
 	case *phase == readyPhase:
 		// TODO: we should restrict the list of commands used here to known-safe.
 		// We also need to inspect a lot of these and adjust our own state.
-		if err := p.server.WriteMessage(msg); err != nil {
-			p.reset()
-		}
+		p.sendServer(msg)
 	}
 }
 
@@ -251,7 +266,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 				"from server: %q (error: %q), disconnecting.\n", msg, err)
 			p.reset()
 		}
-		p.logger.Printf("handleServertEvent(): RecievedMessage: %q\n", msg)
+		p.logger.Printf("handleServerEvent(): RecievedMessage: %q\n", msg)
 	}
 	switch {
 	case !ok:
@@ -261,9 +276,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	case msg.Command == "PING":
 		msg.Prefix = ""
 		msg.Command = "PONG"
-		if err := p.server.WriteMessage(msg); err != nil {
-			p.reset()
-		}
+		p.sendServer(msg)
 	case p.client.phase != readyPhase && (msg.Command == irc.ERR_NONICKNAMEGIVEN ||
 		msg.Command == irc.ERR_ERRONEUSNICKNAME ||
 		msg.Command == irc.ERR_NICKNAMEINUSE ||
@@ -272,40 +285,38 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// perception of the state back to the NICK phase (and of course forward the
 		// message):
 		p.client.phase = nickPhase
-		if err := p.client.WriteMessage(msg); err != nil {
-			p.dropClient()
-		}
+		p.sendClient(msg)
 	case msg.Command == irc.RPL_WELCOME:
 		session.nick = msg.Params[0]
 		*phase = readyPhase
-		if err := p.client.WriteMessage(msg); err != nil {
-			p.dropClient()
-			return
+		if p.sendClient(msg) == nil {
+			p.client.phase = readyPhase
+			p.client.session.nick = session.nick
 		}
-		p.client.phase = readyPhase
-		p.client.session.nick = session.nick
 	case p.client.phase != readyPhase:
 		p.logMessage(msg)
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
 		// of things that can come through, and we want to make sure nothing is
 		// going to get us out of sync with the client.
-		if err := p.client.WriteMessage(msg); err != nil {
+		if p.sendClient(msg) != nil {
 			p.logMessage(msg)
-			p.dropClient()
 		}
 	}
 }
 
 // Disconnect the client. If the handshake isn't done, disconnect the server too.
 func (p *Proxy) dropClient() {
+	p.logger.Println("dropClient(): dropping client connection.")
 	p.client.shutdown()
 	if p.server.phase != readyPhase {
+		p.logger.Println("dropClient(): handshake incomplete; dropping server connection.")
 		p.server.shutdown()
 	}
 }
 
 func (p *Proxy) reset() {
+	p.logger.Println("Dropping connections.")
 	p.client.shutdown()
 	p.server.shutdown()
 }
