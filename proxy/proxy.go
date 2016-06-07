@@ -187,6 +187,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	}
 
 	phase := &p.client.phase
+	session := &p.client.session
 	switch {
 	case !ok || msg.Command == "QUIT":
 		p.dropClient()
@@ -221,9 +222,10 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 
 		// As a workaround, we first insert an appropriate NICK message, before forwarding
 		// the USER message; we can pull the right nick out of the USER message. Then, we
-		// proceed to the next phase. The server may recieve an extra NICK message, but most
-		// likely that will be fine, since setting the NICK once the connection is ready
-		// should be valid.
+		// proceed to the next phase.
+
+		// If the client sends a NICK message afterwards, the server may not respond, since
+		// the nick isn't different. We handle this case below, by responding ourselves.
 		*phase = userPhase
 		err := p.sendServer(&irc.Message{
 			Command: "NICK",
@@ -285,7 +287,23 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 				}
 			}
 			*phase = readyPhase
+			session.nick = nick
 			p.replayLog()
+		}
+	case *phase == readyPhase && msg.Command == "NICK":
+		if msg.Params[0] == p.server.session.nick {
+			// Client is requesting the NICK it already has. The workarounds
+			// for the Pidgin bug above can cause this. Respond ourselves,
+			// since the server may not:
+			oldnick := p.client.session.nick
+			p.client.session.nick = msg.Params[0]
+			p.sendClient(&irc.Message{
+				Prefix:  oldnick,
+				Command: "NICK",
+				Params:  []string{msg.Params[0]},
+			})
+		} else {
+			p.sendServer(msg)
 		}
 	case *phase == readyPhase:
 		// TODO: we should restrict the list of commands used here to known-safe.
