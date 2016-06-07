@@ -239,16 +239,53 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 			// We only send this if the server is expecting it.
 			p.sendServer(msg)
 		} else {
-			// Server already thinks we're done; it won't send the welcome message,
+			// Server already thinks we're done; it won't send the welcome sequence,
 			// so we need to do it ourselves.
-			err := p.sendClient(&irc.Message{
-				Command: irc.RPL_WELCOME,
-				Params:  []string{p.server.session.nick},
-			})
-			if err == nil {
-				*phase = readyPhase
-				p.replayLog()
+			//
+			// TODO: should we record and try to emulate the server's responses?
+			nick := p.server.session.nick
+			messages := []*irc.Message{
+				&irc.Message{
+					Command: irc.RPL_WELCOME,
+					Params: []string{
+						// TODO: should be "<nick>!<user>@<host>".
+						nick,
+						"Welcome back, " + nick,
+					},
+				},
+				&irc.Message{
+					Command: irc.RPL_YOURHOST,
+					Params: []string{
+						"This connection is being proxied by IRC idler.",
+					},
+				},
+				&irc.Message{
+					Command: irc.RPL_CREATED,
+					Params: []string{
+						"TODO: display a suitable CREATED message.",
+					},
+				},
+				&irc.Message{
+					Command: irc.RPL_MYINFO,
+					Params: []string{
+						// TODO: format is:
+						//
+						//  <servername> <version> <available user modes>
+						//  <available channel modes>
+						//
+						// Should investigate the implications of each, esp.
+						// the last two.
+						"irc-idler git-master 0 0",
+					},
+				},
 			}
+			for _, m := range messages {
+				if p.sendClient(m) != nil {
+					return
+				}
+			}
+			*phase = readyPhase
+			p.replayLog()
 		}
 	case *phase == readyPhase:
 		// TODO: we should restrict the list of commands used here to known-safe.
