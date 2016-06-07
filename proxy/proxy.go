@@ -181,17 +181,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	case *phase == passPhase && msg.Command == "NICK":
 		*phase = nickPhase
 		fallthrough
-	case (*phase == nickPhase || *phase == userPhase) && msg.Command == "NICK":
-		// NOTE: *phase indicates what phase the *client thinks* the connection is in.
-		// Therefore, if the client sends a bad nick and has not yet recieved the error
-		// message, it will think it safe to move on to the USER phase. As such, we
-		// accept NICK messages here as well, in case the client needs to try another
-		// NICK. Also, this makes the workaround for pidgin (described below) work.
-		//
-		// A conceptually nicer way to do this would be to set the client's phase back to
-		// NICK if the server sends it a NICK-related error before the ready phase.
-		// TODO: investigate that implementation (incl. implications for the workaround).
-
+	case *phase == nickPhase && msg.Command == "NICK":
 		// FIXME: we should check if the server is done with the handshake and thinks we
 		// have a different nick.
 		if err := p.server.WriteMessage(msg); err != nil {
@@ -213,24 +203,32 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 			*phase = readyPhase
 			p.replayLog()
 		}
-	case (*phase == passPhase || *phase == nickPhase) && msg.Command == "USER":
-		// XXX: The client is doing something non-compliant; USER messages are not
-		// legal before a NICK message. Unfortunately, at least pidgin does this.
-		// Postel's law is crap, but we're in a bit of a bind here. TODO: file a bug
-		// upstream.
-		//
-		// We forward the message and then move to the USER phase, hoping that the client
-		// will send a NICK message soon -- this seems to be the case with pidgin (which
-		// just sends them in the wrong order).
-		if err := p.server.WriteMessage(msg); err != nil {
+	case *phase < userPhase && msg.Command == "USER":
+		// XXX: The client is doing something non-compliant; USER messages are only
+		// legal immediately after a NICK message. Unfortunately, Pidgin sends these in
+		// the wrong order, and we'd like to support Pidgin.
+
+		// Pidgin also sends a non-numeric mode, which makes no sense, but isn't causing
+		// problems for me (@zenhack).
+
+		// TODO: file a bug against Pidgin
+
+		// As a workaround, we first insert an appropriate NICK message, before forwarding
+		// the USER message; we can pull the right nick out of the USER message. Then, we
+		// proceed to the next phase. The server may recieve an extra NICK message, but most
+		// likely that will be fine, since setting the NICK once the connection is ready
+		// should be valid.
+		err := p.server.WriteMessage(&irc.Message{
+			Command: "NICK",
+			Params:  msg.Params[:1],
+		})
+		if err != nil {
+			// server disconnect
 			p.reset()
 		}
 		*phase = userPhase
+		fallthrough
 	case *phase == userPhase && msg.Command == "USER":
-		// XXX: It is actually illegal for a client to send a USER message in the NICK
-		// phase, but at least pidgin does it anyway. It also sends a non-numeric mode,
-		// which makes no sense. Postel's law is horrible, but we're in a bind here.
-		// TODO: file a bug upstream.
 		if err := p.server.WriteMessage(msg); err != nil {
 			p.reset()
 		}
@@ -265,6 +263,17 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		msg.Command = "PONG"
 		if err := p.server.WriteMessage(msg); err != nil {
 			p.reset()
+		}
+	case p.client.phase != readyPhase && (msg.Command == irc.ERR_NONICKNAMEGIVEN ||
+		msg.Command == irc.ERR_ERRONEUSNICKNAME ||
+		msg.Command == irc.ERR_NICKNAMEINUSE ||
+		msg.Command == irc.ERR_NICKCOLLISION):
+		// The client sent a NICK which was rejected by the server. We push their
+		// perception of the state back to the NICK phase (and of course forward the
+		// message):
+		p.client.phase = nickPhase
+		if err := p.client.WriteMessage(msg); err != nil {
+			p.dropClient()
 		}
 	case msg.Command == irc.RPL_WELCOME:
 		session.nick = msg.Params[0]
