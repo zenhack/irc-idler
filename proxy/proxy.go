@@ -182,6 +182,16 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		*phase = nickPhase
 		fallthrough
 	case (*phase == nickPhase || *phase == userPhase) && msg.Command == "NICK":
+		// NOTE: *phase indicates what phase the *client thinks* the connection is in.
+		// Therefore, if the client sends a bad nick and has not yet recieved the error
+		// message, it will think it safe to move on to the USER phase. As such, we
+		// accept NICK messages here as well, in case the client needs to try another
+		// NICK. Also, this makes the workaround for pidgin (described below) work.
+		//
+		// A conceptually nicer way to do this would be to set the client's phase back to
+		// NICK if the server sends it a NICK-related error before the ready phase.
+		// TODO: investigate that implementation (incl. implications for the workaround).
+
 		// FIXME: we should check if the server is done with the handshake and thinks we
 		// have a different nick.
 		if err := p.server.WriteMessage(msg); err != nil {
@@ -203,7 +213,24 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 			*phase = readyPhase
 			p.replayLog()
 		}
+	case (*phase == passPhase || *phase == nickPhase) && msg.Command == "USER":
+		// XXX: The client is doing something non-compliant; USER messages are not
+		// legal before a NICK message. Unfortunately, at least pidgin does this.
+		// Postel's law is crap, but we're in a bit of a bind here. TODO: file a bug
+		// upstream.
+		//
+		// We forward the message and then move to the USER phase, hoping that the client
+		// will send a NICK message soon -- this seems to be the case with pidgin (which
+		// just sends them in the wrong order).
+		if err := p.server.WriteMessage(msg); err != nil {
+			p.reset()
+		}
+		*phase = userPhase
 	case *phase == userPhase && msg.Command == "USER":
+		// XXX: It is actually illegal for a client to send a USER message in the NICK
+		// phase, but at least pidgin does it anyway. It also sends a non-numeric mode,
+		// which makes no sense. Postel's law is horrible, but we're in a bind here.
+		// TODO: file a bug upstream.
 		if err := p.server.WriteMessage(msg); err != nil {
 			p.reset()
 		}
