@@ -210,32 +210,34 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		p.sendServer(msg)
 		// NOTE: we do *not* set the session's nick field now; that
 		// happens when the server replies.
+
 	case *phase < userPhase && msg.Command == "USER":
-		// XXX: The client is doing something non-compliant; USER messages are only
-		// legal immediately after a NICK message. Unfortunately, Pidgin sends these in
-		// the wrong order, and we'd like to support Pidgin.
+		// rfc2812 says clients should send NICK and then USER, but... welcome to the
+		// world of old, ill-specified network protocols. At least pidgin sends these
+		// in the opposite order. We handle them either way, but basically let the
+		// upstream server deal with it.
+		//
+		// For reference, we filed a bug against pidgin regarding the behavior:
+		//
+		//     https://developer.pidgin.im/ticket/17038
+		//
+		// ...but the behavior isn't going away; per the bug report this was probably a
+		// workaround for some other broken program, but exactly what is lost to history.
 
 		// Pidgin also sends a non-numeric mode, which makes no sense, but isn't causing
-		// problems for me (@zenhack).
+		// problems for me (@zenhack). Again, we forward it and let the server deal with
+		// it.
 
-		// TODO: file a bug against Pidgin
-
-		// As a workaround, we first insert an appropriate NICK message, before forwarding
-		// the USER message; we can pull the right nick out of the USER message. Then, we
-		// proceed to the next phase.
-
-		// If the client sends a NICK message afterwards, the server may not respond, since
-		// the nick isn't different. We handle this case below, by responding ourselves.
+		// We advance to the USER phase. If the server is expecting a log in sequence
+		// from us, we forward the message, otherwise we just drop it.
 		*phase = userPhase
-		err := p.sendServer(&irc.Message{
-			Command: "NICK",
-			Params:  msg.Params[:1],
-		})
-		if err != nil {
-			return
+		if p.server.phase != readyPhase {
+			p.sendServer(msg)
 		}
-		fallthrough
-	case *phase == userPhase && msg.Command == "USER":
+	case *phase == userPhase && (msg.Command == "USER" || msg.Command == "NICK"):
+		// Per the comments above, rfc2812 says client should only send USER in this
+		// phase, but sometimes they go out of order. Either way, we forward the message
+		// along and move to the welcome state.
 		*phase = welcomePhase
 		if p.server.phase != readyPhase {
 			// We only send this if the server is expecting it.
