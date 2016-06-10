@@ -34,10 +34,16 @@ type Proxy struct {
 	err        error
 	messagelog []*irc.Message // IRC messages recieved while client is disconnected.
 
-	// Nick on the server. Not always set, only used by the reconnecting. Basically
-	// a hack to be able to give the user the right name in the welcome message on
-	// reconnect:
-	nick string
+	// recorded server responses; if the server already thinks we're logged in, we
+	// can't get it to send these again, so we record them the first
+	// time to use when the client reconnects:
+	haveMsgCache bool
+	msgCache     struct {
+		welcome  string
+		yourhost string
+		created  string
+		myinfo   []string
+	}
 
 	logger *log.Logger // Informational logging (nothing to do with messagelog).
 }
@@ -242,11 +248,14 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		if p.server.phase != readyPhase {
 			// We only send this if the server is expecting it.
 			p.sendServer(msg)
+		} else if !p.haveMsgCache {
+			// This is probably a bug. TODO: We should report it to the user in a
+			// more comprehensible way.
+			p.logger.Println("ERROR: no message cache on client reconnect!")
+			p.reset()
 		} else {
 			// Server already thinks we're done; it won't send the welcome sequence,
 			// so we need to do it ourselves.
-			//
-			// TODO: should we record and try to emulate the server's responses?
 			nick := p.server.session.nick
 			messages := []*irc.Message{
 				&irc.Message{
@@ -254,33 +263,26 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 					Params: []string{
 						// TODO: should be "<nick>!<user>@<host>".
 						nick,
-						"Welcome back, " + nick,
+						p.msgCache.welcome,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_YOURHOST,
 					Params: []string{
-						"This connection is being proxied by IRC idler.",
+						nick,
+						p.msgCache.yourhost,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_CREATED,
 					Params: []string{
-						"TODO: display a suitable CREATED message.",
+						nick,
+						p.msgCache.created,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_MYINFO,
-					Params: []string{
-						// TODO: format is:
-						//
-						//  <servername> <version> <available user modes>
-						//  <available channel modes>
-						//
-						// Should investigate the implications of each, esp.
-						// the last two.
-						"irc-idler git-master 0 0",
-					},
+					Params:  append([]string{nick}, p.msgCache.myinfo...),
 				},
 			}
 			for _, m := range messages {
@@ -345,11 +347,22 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.sendClient(msg)
 	case msg.Command == irc.RPL_WELCOME:
 		session.nick = msg.Params[0]
-		*phase = readyPhase
+		p.msgCache.welcome = msg.Params[1]
 		if p.sendClient(msg) == nil {
 			p.client.phase = readyPhase
 			p.client.session.nick = session.nick
 		}
+	case msg.Command == irc.RPL_YOURHOST:
+		p.msgCache.yourhost = msg.Params[1]
+		p.sendClient(msg)
+	case msg.Command == irc.RPL_CREATED:
+		p.msgCache.created = msg.Params[1]
+		p.sendClient(msg)
+	case msg.Command == irc.RPL_MYINFO:
+		p.msgCache.myinfo = msg.Params[1:]
+		p.sendClient(msg)
+		*phase = readyPhase
+		p.haveMsgCache = true
 	case p.client.phase != readyPhase:
 		p.logMessage(msg)
 	default:

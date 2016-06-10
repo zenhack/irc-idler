@@ -16,10 +16,13 @@ func (me *MessageError) String() string {
 }
 
 var minParams = map[string]int{
-	"PASS":      1,
-	"NICK":      1,
-	"USER":      4,
-	RPL_WELCOME: 1, // XXX: maybe 2 according to the spec? 2nd is for humans
+	"PASS":       1,
+	"NICK":       1,
+	"USER":       4,
+	RPL_WELCOME:  2,
+	RPL_YOURHOST: 2,
+	RPL_CREATED:  2,
+	RPL_MYINFO:   5,
 }
 
 // Validate the message m. This performs various checks:
