@@ -290,9 +290,10 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 					return
 				}
 			}
-			*phase = readyPhase
 			session.nick = nick
-			p.replayLog()
+			// Trigger a message of the day response; once that completes
+			// the client will be ready.
+			p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
 		}
 	case *phase == readyPhase && msg.Command == "NICK":
 		if msg.Params[0] == p.server.session.nick {
@@ -349,7 +350,6 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		session.nick = msg.Params[0]
 		p.msgCache.welcome = msg.Params[1]
 		if p.sendClient(msg) == nil {
-			p.client.phase = readyPhase
 			p.client.session.nick = session.nick
 		}
 	case msg.Command == irc.RPL_YOURHOST:
@@ -363,6 +363,13 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.sendClient(msg)
 		*phase = readyPhase
 		p.haveMsgCache = true
+	case msg.Command == irc.RPL_MOTDSTART || msg.Command == irc.RPL_MOTD:
+		p.sendClient(msg)
+	case msg.Command == irc.RPL_ENDOFMOTD:
+		p.client.phase = readyPhase
+		if p.sendClient(msg) == nil {
+			p.replayLog()
+		}
 	case p.client.phase != readyPhase:
 		p.logMessage(msg)
 	default:
@@ -396,12 +403,9 @@ func (p *Proxy) logMessage(m *irc.Message) {
 }
 
 func (p *Proxy) replayLog() {
+	p.logger.Println("replayLog()")
 	for _, v := range p.messagelog {
-		err := p.client.WriteMessage(v)
-		if err != nil {
-			p.dropClient()
-			return
-		}
+		p.sendClient(v)
 	}
 	p.messagelog = p.messagelog[:0]
 }
