@@ -17,6 +17,8 @@ func (me *MessageError) String() string {
 
 var minParams = map[string]int{
 	"PASS":       1,
+	"PRIVMSG":    2,
+	"NOTICE":     2,
 	"NICK":       1,
 	"USER":       4,
 	RPL_WELCOME:  2,

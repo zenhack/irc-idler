@@ -371,7 +371,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// buffered messages addressed directly to us. If not, that log should
 		// be empty anyway:
 		p.replayLog(p.client.session.ClientID.Nick)
-	case msg.Command == "PRIVMSG":
+	case msg.Command == "PRIVMSG" || msg.Command == "NOTICE":
 		if p.client.session.channels[msg.Params[0]] ||
 			msg.Params[0] == p.client.session.ClientID.Nick {
 
@@ -425,7 +425,9 @@ func (p *Proxy) logMessage(msg *irc.Message) {
 	p.logger.Printf("logMessage(%q)\n", msg)
 	// For now we only log messages. we'll want to add to this list in
 	// the future.
-	if msg.Command != "PRIVMSG" {
+	switch msg.Command {
+	case "PRIVMSG", "NOTICE":
+	default:
 		return
 	}
 
