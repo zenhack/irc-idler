@@ -5,21 +5,10 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"strings"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
 )
-
-const (
-	// phases of connection setup
-	disconnectedPhase phase = iota // No tcp connection
-	passPhase                      // Server waiting for PASS (or NICK) command
-	nickPhase                      // Server waiting for NICK command
-	userPhase                      // Server waiting for USER command
-	welcomePhase                   // Client waiting for RPL_WELCOME
-	readyPhase                     // Handshake complete
-)
-
-type phase int
 
 type Proxy struct {
 	// listens for client connections:
@@ -58,8 +47,13 @@ type connection struct {
 // Information about the state of the connection. Note that we store one of these
 // indepentently for both client and server; their views may not always align.
 type session struct {
-	phase
-	nick string // User's current nick.
+	irc.ClientID
+	// whether the handshake's NICK and USER messages have been recieved:
+	nickRecieved, userRecieved bool
+}
+
+func (s *session) inHandshake() bool {
+	return !(s.nickRecieved && s.userRecieved)
 }
 
 // Tear down the connection. If it is not currently active, this is a noop.
@@ -108,7 +102,6 @@ func (c *connection) setup(conn net.Conn) {
 	c.Closer = conn
 	c.ReadWriter = irc.NewReadWriter(conn)
 	c.Chan = irc.ReadAll(c)
-	c.phase = passPhase
 }
 
 func (p *Proxy) acceptLoop() {
@@ -168,17 +161,32 @@ func (p *Proxy) serve() {
 			p.client.setup(clientConn)
 
 			// If we're not done with the handshake, restart the server connection too.
-			if p.server.phase != readyPhase {
+			if p.server.inHandshake() {
 				p.server.shutdown()
 				serverConn, err := p.dialServer()
 				if err != nil {
 					// Server connection failed. Boot the client and let
 					// them deal with it:
 					p.client.shutdown()
+				} else {
+					p.server.setup(serverConn)
 				}
-				p.server.setup(serverConn)
 			}
 			continue
+		}
+	}
+}
+
+func (p *Proxy) advanceHandshake(command string) {
+	for _, c := range []*connection{p.client, p.server} {
+		switch command {
+		case "NICK":
+			c.session.nickRecieved = true
+		case "USER":
+			c.session.userRecieved = true
+		default:
+			panic("advanceHandshake() called with something other " +
+				"than USER or NICK.")
 		}
 	}
 }
@@ -192,63 +200,45 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		}
 	}
 
-	phase := &p.client.phase
-	session := &p.client.session
 	switch {
 	case !ok || msg.Command == "QUIT":
 		p.dropClient()
-	case *phase == passPhase && msg.Command == "PASS":
-		if p.server.phase == passPhase {
-			// FIXME: how do we advance the server phase? We shouldn't assume
-			// the server does this automatically.
-			if p.sendServer(msg) != nil {
-				return
-			}
-		}
-		*phase = nickPhase
-	case *phase == passPhase && msg.Command == "NICK":
-		*phase = nickPhase
-		fallthrough
-	case *phase == nickPhase && msg.Command == "NICK":
-		// FIXME: we should check if the server is done with the handshake and thinks we
-		// have a different nick.
-		*phase = userPhase
-		p.sendServer(msg)
-		// NOTE: we do *not* set the session's nick field now; that
-		// happens when the server replies.
-
-	case *phase < userPhase && msg.Command == "USER":
-		// rfc2812 says clients should send NICK and then USER, but... welcome to the
-		// world of old, ill-specified network protocols. At least pidgin sends these
-		// in the opposite order. We handle them either way, but basically let the
-		// upstream server deal with it.
-		//
-		// For reference, we filed a bug against pidgin regarding the behavior:
-		//
-		//     https://developer.pidgin.im/ticket/17038
-		//
-		// ...but the behavior isn't going away; per the bug report this was probably a
-		// workaround for some other broken program, but exactly what is lost to history.
-
-		// Pidgin also sends a non-numeric mode, which makes no sense, but isn't causing
-		// problems for me (@zenhack). Again, we forward it and let the server deal with
-		// it.
-
-		// We advance to the USER phase. If the server is expecting a log in sequence
-		// from us, we forward the message, otherwise we just drop it.
-		*phase = userPhase
-		if p.server.phase != readyPhase {
+	case p.client.inHandshake() && msg.Command == "PASS":
+		if p.server.inHandshake() {
+			// XXX: The client should only be sending a PASS before NICK
+			// and USER. we're not checking this, and just forwarding to the
+			// server. Might be nice to do a bit more validation ourselves.
 			p.sendServer(msg)
 		}
-	case *phase == userPhase && (msg.Command == "USER" || msg.Command == "NICK"):
-		// Per the comments above, rfc2812 says client should only send USER in this
-		// phase, but sometimes they go out of order. Either way, we forward the message
-		// along and move to the welcome state.
-		*phase = welcomePhase
-		if p.server.phase != readyPhase {
-			// We only send this if the server is expecting it.
+	case p.client.inHandshake() && (msg.Command == "USER" || msg.Command == "NICK"):
+		if p.server.inHandshake() {
 			p.sendServer(msg)
-		} else if !p.haveMsgCache {
+			p.advanceHandshake(msg.Command)
+
+			// One of two things will be the case here:
+			//
+			// 1. We're still not done with the handshake, in which case we return
+			//    and wait for further messages
+			// 2. We've just finished the handshake on both sides, so the server will
+			//    take care of the welcome messages itself.
+			//
+			// In both cases we can just return
+			return
+		}
+
+		// XXX: we ought to do at least a little sanity checking here. e.g.
+		// what if the client sends a nick other than what we have on file?
+		p.advanceHandshake(msg.Command)
+		if p.client.inHandshake() {
+			// Client still has more handshaking to do; we can return and wait for
+			// more messages.
+			return
+		}
+
+		// The server thinks the handshake is done, so we need to produce the welcome
+		// messages ourselves.
+
+		if !p.haveMsgCache {
 			// This is probably a bug. TODO: We should report it to the user in a
 			// more comprehensible way.
 			p.logger.Println("ERROR: no message cache on client reconnect!")
@@ -256,33 +246,32 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		} else {
 			// Server already thinks we're done; it won't send the welcome sequence,
 			// so we need to do it ourselves.
-			nick := p.server.session.nick
+			clientID := p.server.session.ClientID.String()
 			messages := []*irc.Message{
 				&irc.Message{
 					Command: irc.RPL_WELCOME,
 					Params: []string{
-						// TODO: should be "<nick>!<user>@<host>".
-						nick,
+						clientID,
 						p.msgCache.welcome,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_YOURHOST,
 					Params: []string{
-						nick,
+						clientID,
 						p.msgCache.yourhost,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_CREATED,
 					Params: []string{
-						nick,
+						clientID,
 						p.msgCache.created,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_MYINFO,
-					Params:  append([]string{nick}, p.msgCache.myinfo...),
+					Params:  append([]string{clientID}, p.msgCache.myinfo...),
 				},
 			}
 			for _, m := range messages {
@@ -290,27 +279,20 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 					return
 				}
 			}
-			session.nick = nick
+			p.client.session.ClientID, _ = irc.ParseClientID(clientID)
 			// Trigger a message of the day response; once that completes
 			// the client will be ready.
 			p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
 		}
-	case *phase == readyPhase && msg.Command == "NICK":
-		if msg.Params[0] == p.server.session.nick {
-			// Client is requesting the NICK it already has. The workarounds
-			// for the Pidgin bug above can cause this. Respond ourselves,
-			// since the server may not:
-			oldnick := p.client.session.nick
-			p.client.session.nick = msg.Params[0]
-			p.sendClient(&irc.Message{
-				Prefix:  oldnick,
-				Command: "NICK",
-				Params:  []string{msg.Params[0]},
-			})
-		} else {
-			p.sendServer(msg)
+		for _, c := range []*connection{p.client, p.server} {
+			switch msg.Command {
+			case "USER":
+				c.session.userRecieved = true
+			case "NICK":
+				c.session.nickRecieved = true
+			}
 		}
-	case *phase == readyPhase:
+	case !p.client.inHandshake():
 		// TODO: we should restrict the list of commands used here to known-safe.
 		// We also need to inspect a lot of these and adjust our own state.
 		p.sendServer(msg)
@@ -318,8 +300,6 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 }
 
 func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
-	phase := &p.server.phase
-	session := &p.server.session
 	if ok {
 		if err := msg.Validate(); err != nil {
 			p.logger.Printf("handleServerEvent(): Got an invalid message"+
@@ -337,20 +317,36 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		msg.Prefix = ""
 		msg.Command = "PONG"
 		p.sendServer(msg)
-	case p.client.phase != readyPhase && (msg.Command == irc.ERR_NONICKNAMEGIVEN ||
+	case p.client.inHandshake() && (msg.Command == irc.ERR_NONICKNAMEGIVEN ||
 		msg.Command == irc.ERR_ERRONEUSNICKNAME ||
 		msg.Command == irc.ERR_NICKNAMEINUSE ||
 		msg.Command == irc.ERR_NICKCOLLISION):
-		// The client sent a NICK which was rejected by the server. We push their
-		// perception of the state back to the NICK phase (and of course forward the
-		// message):
-		p.client.phase = nickPhase
+		// The client sent a NICK which was rejected by the server. We unset the
+		// nickRecieved bit (and of course forward the message):
+		p.client.session.nickRecieved = false
 		p.sendClient(msg)
 	case msg.Command == irc.RPL_WELCOME:
-		session.nick = msg.Params[0]
 		p.msgCache.welcome = msg.Params[1]
+
+		// Extract the client ID. annoyingly, this isn't its own argument, so we
+		// have to pull it out of the welcome message manually.
+		parts := strings.Split(p.msgCache.welcome, " ")
+		clientIDString := parts[len(parts)-1]
+		clientID, err := irc.ParseClientID(clientIDString)
+
+		if err != nil {
+			p.logger.Printf(
+				"Server sent a welcome message with an invalid "+
+					"client id: %q (%v). Dropping connections.",
+				clientIDString, err,
+			)
+			p.reset()
+			return
+		}
+
+		p.server.session.ClientID = clientID
 		if p.sendClient(msg) == nil {
-			p.client.session.nick = session.nick
+			p.client.session.ClientID = clientID
 		}
 	case msg.Command == irc.RPL_YOURHOST:
 		p.msgCache.yourhost = msg.Params[1]
@@ -361,16 +357,14 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	case msg.Command == irc.RPL_MYINFO:
 		p.msgCache.myinfo = msg.Params[1:]
 		p.sendClient(msg)
-		*phase = readyPhase
 		p.haveMsgCache = true
 	case msg.Command == irc.RPL_MOTDSTART || msg.Command == irc.RPL_MOTD:
 		p.sendClient(msg)
 	case msg.Command == irc.RPL_ENDOFMOTD:
-		p.client.phase = readyPhase
 		if p.sendClient(msg) == nil {
 			p.replayLog()
 		}
-	case p.client.phase != readyPhase:
+	case p.client.inHandshake():
 		p.logMessage(msg)
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
@@ -386,7 +380,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 func (p *Proxy) dropClient() {
 	p.logger.Println("dropClient(): dropping client connection.")
 	p.client.shutdown()
-	if p.server.phase != readyPhase {
+	if p.server.inHandshake() {
 		p.logger.Println("dropClient(): handshake incomplete; dropping server connection.")
 		p.server.shutdown()
 	}
