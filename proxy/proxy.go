@@ -17,11 +17,13 @@ type Proxy struct {
 	// Incomming connections from acceptLoop:
 	acceptChan chan net.Conn
 
-	client     *connection
-	server     *connection
-	addr       string // address of IRC server to connect to.
-	err        error
-	messagelog []*irc.Message // IRC messages recieved while client is disconnected.
+	client *connection
+	server *connection
+	addr   string // address of IRC server to connect to.
+	err    error
+
+	// Per-channel IRC messages recieved while client is not in the channel.
+	messagelogs map[string][]*irc.Message
 
 	// recorded server responses; if the server already thinks we're logged in, we
 	// can't get it to send these again, so we record them the first
@@ -50,6 +52,8 @@ type session struct {
 	irc.ClientID
 	// whether the handshake's NICK and USER messages have been recieved:
 	nickRecieved, userRecieved bool
+
+	channels map[string]bool // List of channels we're in.
 }
 
 func (s *session) inHandshake() bool {
@@ -84,12 +88,13 @@ func NewProxy(l net.Listener, addr string, logger *log.Logger) *Proxy {
 		logger = log.New(ioutil.Discard, log.Prefix(), log.Flags())
 	}
 	return &Proxy{
-		listener:   l,
-		addr:       addr,
-		client:     &connection{},
-		server:     &connection{},
-		logger:     logger,
-		acceptChan: make(chan net.Conn),
+		listener:    l,
+		addr:        addr,
+		client:      &connection{},
+		server:      &connection{},
+		logger:      logger,
+		acceptChan:  make(chan net.Conn),
+		messagelogs: make(map[string][]*irc.Message),
 	}
 }
 
@@ -360,12 +365,24 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.haveMsgCache = true
 	case msg.Command == irc.RPL_MOTDSTART || msg.Command == irc.RPL_MOTD:
 		p.sendClient(msg)
-	case msg.Command == irc.RPL_ENDOFMOTD:
-		if p.sendClient(msg) == nil {
-			p.replayLog()
+	case msg.Command == irc.RPL_ENDOFMOTD || msg.Command == irc.ERR_NOMOTD:
+		p.sendClient(msg)
+		// If we're just reconnecting, this is the appropriate point to send
+		// buffered messages addressed directly to us. If not, that log should
+		// be empty anyway:
+		p.replayLog(p.client.session.ClientID.Nick)
+	case msg.Command == "PRIVMSG":
+		if p.client.session.channels[msg.Params[0]] ||
+			msg.Params[0] == p.client.session.ClientID.Nick {
+
+			if p.sendClient(msg) != nil {
+				p.logMessage(msg)
+			}
+		} else {
+			p.logMessage(msg)
 		}
 	case p.client.inHandshake():
-		p.logMessage(msg)
+		return
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
 		// of things that can come through, and we want to make sure nothing is
@@ -392,14 +409,30 @@ func (p *Proxy) reset() {
 	p.server.shutdown()
 }
 
-func (p *Proxy) logMessage(m *irc.Message) {
-	p.messagelog = append(p.messagelog, m)
-}
-
-func (p *Proxy) replayLog() {
-	p.logger.Println("replayLog()")
-	for _, v := range p.messagelog {
+func (p *Proxy) replayLog(channelName string) {
+	p.logger.Printf("replayLog(%q)\n", channelName)
+	if p.messagelogs[channelName] == nil {
+		p.logger.Printf("No log for channel.")
+		return
+	}
+	for _, v := range p.messagelogs[channelName] {
 		p.sendClient(v)
 	}
-	p.messagelog = p.messagelog[:0]
+	delete(p.messagelogs, channelName)
+}
+
+func (p *Proxy) logMessage(msg *irc.Message) {
+	p.logger.Printf("logMessage(%q)\n", msg)
+	// For now we only log messages. we'll want to add to this list in
+	// the future.
+	if msg.Command != "PRIVMSG" {
+		return
+	}
+
+	channelName := msg.Params[0]
+	if p.messagelogs[channelName] == nil {
+		p.messagelogs[channelName] = []*irc.Message{msg}
+	} else {
+		p.messagelogs[channelName] = append(p.messagelogs[channelName], msg)
+	}
 }
