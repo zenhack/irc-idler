@@ -107,6 +107,7 @@ func (c *connection) setup(conn net.Conn) {
 	c.Closer = conn
 	c.ReadWriter = irc.NewReadWriter(conn)
 	c.Chan = irc.ReadAll(c)
+	c.session.channels = make(map[string]bool)
 }
 
 func (p *Proxy) acceptLoop() {
@@ -205,102 +206,120 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		}
 	}
 
-	switch {
-	case !ok || msg.Command == "QUIT":
+	if !ok || msg.Command == "QUIT" {
 		p.dropClient()
-	case p.client.inHandshake() && msg.Command == "PASS":
-		if p.server.inHandshake() {
-			// XXX: The client should only be sending a PASS before NICK
-			// and USER. we're not checking this, and just forwarding to the
-			// server. Might be nice to do a bit more validation ourselves.
-			p.sendServer(msg)
-		}
-	case p.client.inHandshake() && (msg.Command == "USER" || msg.Command == "NICK"):
-		if p.server.inHandshake() {
-			p.sendServer(msg)
-			p.advanceHandshake(msg.Command)
+		return
+	}
 
-			// One of two things will be the case here:
-			//
-			// 1. We're still not done with the handshake, in which case we return
-			//    and wait for further messages
-			// 2. We've just finished the handshake on both sides, so the server will
-			//    take care of the welcome messages itself.
-			//
-			// In both cases we can just return
-			return
-		}
-
-		// XXX: we ought to do at least a little sanity checking here. e.g.
-		// what if the client sends a nick other than what we have on file?
-		p.advanceHandshake(msg.Command)
-		if p.client.inHandshake() {
-			// Client still has more handshaking to do; we can return and wait for
-			// more messages.
-			return
-		}
-
-		// The server thinks the handshake is done, so we need to produce the welcome
-		// messages ourselves.
-
-		if !p.haveMsgCache {
-			// This is probably a bug. TODO: We should report it to the user in a
-			// more comprehensible way.
-			p.logger.Println("ERROR: no message cache on client reconnect!")
-			p.reset()
-		} else {
-			// Server already thinks we're done; it won't send the welcome sequence,
-			// so we need to do it ourselves.
-			clientID := p.server.session.ClientID.String()
-			messages := []*irc.Message{
-				&irc.Message{
-					Command: irc.RPL_WELCOME,
-					Params: []string{
-						clientID,
-						p.msgCache.welcome,
-					},
-				},
-				&irc.Message{
-					Command: irc.RPL_YOURHOST,
-					Params: []string{
-						clientID,
-						p.msgCache.yourhost,
-					},
-				},
-				&irc.Message{
-					Command: irc.RPL_CREATED,
-					Params: []string{
-						clientID,
-						p.msgCache.created,
-					},
-				},
-				&irc.Message{
-					Command: irc.RPL_MYINFO,
-					Params:  append([]string{clientID}, p.msgCache.myinfo...),
-				},
+	if p.client.inHandshake() {
+		switch msg.Command {
+		case "PASS":
+			if p.server.inHandshake() {
+				// XXX: The client should only be sending a PASS before NICK
+				// and USER. we're not checking this, and just forwarding to the
+				// server. Might be nice to do a bit more validation ourselves.
+				p.sendServer(msg)
 			}
-			for _, m := range messages {
-				if p.sendClient(m) != nil {
-					return
+		case "USER", "NICK":
+			if p.server.inHandshake() {
+				p.sendServer(msg)
+				p.advanceHandshake(msg.Command)
+
+				// One of two things will be the case here:
+				//
+				// 1. We're still not done with the handshake, in which case we return
+				//    and wait for further messages
+				// 2. We've just finished the handshake on both sides, so the server will
+				//    take care of the welcome messages itself.
+				//
+				// In both cases we can just return
+				return
+			}
+
+			// XXX: we ought to do at least a little sanity checking here. e.g.
+			// what if the client sends a nick other than what we have on file?
+			p.advanceHandshake(msg.Command)
+			if p.client.inHandshake() {
+				// Client still has more handshaking to do; we can return and wait for
+				// more messages.
+				return
+			}
+
+			// The server thinks the handshake is done, so we need to produce the welcome
+			// messages ourselves.
+
+			if !p.haveMsgCache {
+				// This is probably a bug. TODO: We should report it to the user in a
+				// more comprehensible way.
+				p.logger.Println("ERROR: no message cache on client reconnect!")
+				p.reset()
+			} else {
+				// Server already thinks we're done; it won't send the welcome sequence,
+				// so we need to do it ourselves.
+				clientID := p.server.session.ClientID.String()
+				messages := []*irc.Message{
+					&irc.Message{
+						Command: irc.RPL_WELCOME,
+						Params: []string{
+							clientID,
+							p.msgCache.welcome,
+						},
+					},
+					&irc.Message{
+						Command: irc.RPL_YOURHOST,
+						Params: []string{
+							clientID,
+							p.msgCache.yourhost,
+						},
+					},
+					&irc.Message{
+						Command: irc.RPL_CREATED,
+						Params: []string{
+							clientID,
+							p.msgCache.created,
+						},
+					},
+					&irc.Message{
+						Command: irc.RPL_MYINFO,
+						Params:  append([]string{clientID}, p.msgCache.myinfo...),
+					},
+				}
+				for _, m := range messages {
+					if p.sendClient(m) != nil {
+						return
+					}
+				}
+				p.client.session.ClientID, _ = irc.ParseClientID(clientID)
+				// Trigger a message of the day response; once that completes
+				// the client will be ready.
+				p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
+			}
+			for _, c := range []*connection{p.client, p.server} {
+				switch msg.Command {
+				case "USER":
+					c.session.userRecieved = true
+				case "NICK":
+					c.session.nickRecieved = true
 				}
 			}
-			p.client.session.ClientID, _ = irc.ParseClientID(clientID)
-			// Trigger a message of the day response; once that completes
-			// the client will be ready.
-			p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
 		}
-		for _, c := range []*connection{p.client, p.server} {
-			switch msg.Command {
-			case "USER":
-				c.session.userRecieved = true
-			case "NICK":
-				c.session.nickRecieved = true
+	} else {
+		switch msg.Command {
+		case "JOIN":
+			if p.server.session.channels[msg.Params[0]] {
+				msg.Prefix = p.client.session.ClientID.String()
+				if p.sendClient(msg) == nil {
+					p.client.session.channels[msg.Params[0]] = true
+					p.replayLog(msg.Params[0])
+				}
+			} else {
+				p.sendServer(msg)
 			}
+		default:
+			// TODO: we should restrict the list of commands used here to known-safe.
+			// We also need to inspect a lot of these and adjust our own state.
+			p.sendServer(msg)
 		}
-	case !p.client.inHandshake():
-		// TODO: we should restrict the list of commands used here to known-safe.
-		// We also need to inspect a lot of these and adjust our own state.
-		p.sendServer(msg)
 	}
 }
 
@@ -310,27 +329,29 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			p.logger.Printf("handleServerEvent(): Got an invalid message"+
 				"from server: %q (error: %q), disconnecting.\n", msg, err)
 			p.reset()
+			return
 		}
 		p.logger.Printf("handleServerEvent(): RecievedMessage: %q\n", msg)
-	}
-	switch {
-	case !ok:
+	} else {
 		// Server disconnect. We boot the client and start all over.
 		// TODO: might be nice to attempt a reconnect with cached credentials.
 		p.reset()
-	case msg.Command == "PING":
+		return
+	}
+	switch msg.Command {
+	case "PING":
 		msg.Prefix = ""
 		msg.Command = "PONG"
 		p.sendServer(msg)
-	case p.client.inHandshake() && (msg.Command == irc.ERR_NONICKNAMEGIVEN ||
-		msg.Command == irc.ERR_ERRONEUSNICKNAME ||
-		msg.Command == irc.ERR_NICKNAMEINUSE ||
-		msg.Command == irc.ERR_NICKCOLLISION):
-		// The client sent a NICK which was rejected by the server. We unset the
-		// nickRecieved bit (and of course forward the message):
-		p.client.session.nickRecieved = false
-		p.sendClient(msg)
-	case msg.Command == irc.RPL_WELCOME:
+	case irc.ERR_NONICKNAMEGIVEN, irc.ERR_ERRONEUSNICKNAME, irc.ERR_NICKNAMEINUSE,
+		irc.ERR_NICKCOLLISION:
+		if p.client.inHandshake() {
+			// The client sent a NICK which was rejected by the server. We unset the
+			// nickRecieved bit (and of course forward the message):
+			p.client.session.nickRecieved = false
+			p.sendClient(msg)
+		}
+	case irc.RPL_WELCOME:
 		p.msgCache.welcome = msg.Params[1]
 
 		// Extract the client ID. annoyingly, this isn't its own argument, so we
@@ -353,25 +374,25 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		if p.sendClient(msg) == nil {
 			p.client.session.ClientID = clientID
 		}
-	case msg.Command == irc.RPL_YOURHOST:
+	case irc.RPL_YOURHOST:
 		p.msgCache.yourhost = msg.Params[1]
 		p.sendClient(msg)
-	case msg.Command == irc.RPL_CREATED:
+	case irc.RPL_CREATED:
 		p.msgCache.created = msg.Params[1]
 		p.sendClient(msg)
-	case msg.Command == irc.RPL_MYINFO:
+	case irc.RPL_MYINFO:
 		p.msgCache.myinfo = msg.Params[1:]
 		p.sendClient(msg)
 		p.haveMsgCache = true
-	case msg.Command == irc.RPL_MOTDSTART || msg.Command == irc.RPL_MOTD:
+	case irc.RPL_MOTDSTART, irc.RPL_MOTD:
 		p.sendClient(msg)
-	case msg.Command == irc.RPL_ENDOFMOTD || msg.Command == irc.ERR_NOMOTD:
+	case irc.RPL_ENDOFMOTD, irc.ERR_NOMOTD:
 		p.sendClient(msg)
 		// If we're just reconnecting, this is the appropriate point to send
 		// buffered messages addressed directly to us. If not, that log should
 		// be empty anyway:
 		p.replayLog(p.client.session.ClientID.Nick)
-	case msg.Command == "PRIVMSG" || msg.Command == "NOTICE":
+	case "PRIVMSG", "NOTICE":
 		if p.client.session.channels[msg.Params[0]] ||
 			msg.Params[0] == p.client.session.ClientID.Nick {
 
@@ -381,8 +402,33 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		} else {
 			p.logMessage(msg)
 		}
-	case p.client.inHandshake():
-		return
+	case "JOIN", "KICK", "PART", "QUIT":
+		var setPresence func(m map[string]bool)
+		if msg.Command == "JOIN" {
+			p.logger.Printf("Got JOIN message for channel %q.", msg.Params[0])
+			setPresence = func(m map[string]bool) {
+				m[msg.Params[0]] = true
+			}
+		} else {
+			setPresence = func(m map[string]bool) {
+				delete(m, msg.Params[0])
+			}
+		}
+
+		clientid, err := irc.ParseClientID(msg.Prefix)
+		isMe := err == nil && clientid.Nick == p.server.session.ClientID.Nick
+		if isMe {
+			setPresence(p.server.session.channels)
+		}
+		if p.client.inHandshake() {
+			p.logMessage(msg)
+		} else if p.sendClient(msg) == nil {
+			if isMe {
+				setPresence(p.client.session.channels)
+			}
+		} else {
+			p.logMessage(msg)
+		}
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
 		// of things that can come through, and we want to make sure nothing is
