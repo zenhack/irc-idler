@@ -13,7 +13,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	api, err := grain.ConnectAPI(ctx, websession.FromHandler(http.DefaultServeMux))
+	api, err := grain.ConnectAPI(ctx, websession.FromHandler(ctx, http.DefaultServeMux))
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: ", err)

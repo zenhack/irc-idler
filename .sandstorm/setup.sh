@@ -6,5 +6,5 @@
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y golang
+apt-get upgrade -y
 exit 0
