@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"golang.org/x/net/proxy"
 	"log"
 	"net"
 	"os"
-	"zenhack.net/go/irc-idler/proxy"
+	ircproxy "zenhack.net/go/irc-idler/proxy"
 )
 
 var (
@@ -32,5 +33,5 @@ func main() {
 	}
 	l, err := net.Listen("tcp", *laddr)
 	checkFatal(err)
-	proxy.NewProxy(l, *raddr, logger).Run()
+	ircproxy.NewProxy(l, proxy.Direct, *raddr, logger).Run()
 }

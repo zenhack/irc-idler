@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
+
+	"golang.org/x/net/proxy"
 )
 
 type Proxy struct {
@@ -20,6 +22,7 @@ type Proxy struct {
 	client *connection
 	server *connection
 	addr   string // address of IRC server to connect to.
+	dialer proxy.Dialer
 	err    error
 
 	// Per-channel IRC messages recieved while client is not in the channel.
@@ -80,15 +83,17 @@ func (c *connection) shutdown() {
 // parameters:
 //
 // `l` will be used to listen for client connections.
+// `dialer` is a proxy.Dialer to be used to establish the connection.
 // `addr` is the tcp address of the server
 // `logger`, if non-nil, will be used for informational logging. Note that the logging
 //  preformed is very noisy; it is mostly meant for debugging.
-func NewProxy(l net.Listener, addr string, logger *log.Logger) *Proxy {
+func NewProxy(l net.Listener, dialer proxy.Dialer, addr string, logger *log.Logger) *Proxy {
 	if logger == nil {
 		logger = log.New(ioutil.Discard, log.Prefix(), log.Flags())
 	}
 	return &Proxy{
 		listener:    l,
+		dialer:      dialer,
 		addr:        addr,
 		client:      &connection{},
 		server:      &connection{},
@@ -145,10 +150,6 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 	return err
 }
 
-func (p *Proxy) dialServer() (net.Conn, error) {
-	return net.Dial("tcp", p.addr)
-}
-
 func (p *Proxy) serve() {
 	for {
 		p.logger.Println("serve(): Top of loop")
@@ -169,7 +170,7 @@ func (p *Proxy) serve() {
 			// If we're not done with the handshake, restart the server connection too.
 			if p.server.inHandshake() {
 				p.server.shutdown()
-				serverConn, err := p.dialServer()
+				serverConn, err := p.dialer.Dial("tcp", p.addr)
 				if err != nil {
 					// Server connection failed. Boot the client and let
 					// them deal with it:
