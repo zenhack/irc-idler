@@ -5,6 +5,9 @@ import (
 	"strings"
 )
 
+// A client identifier. The RFC suggests (but actually doesn't explicitly say)
+// that this is of the form `<nick>!<user>@<host>`. We accept either this or
+// just `<nick>` in which case the value of the other two fields will be `""`.
 type ClientID struct {
 	Nick, User, Host string
 }
