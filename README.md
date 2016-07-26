@@ -1,6 +1,9 @@
-IRC idler is a (very, very WIP) program which idles in IRC
-for you. [sandstorm][1] will be the preferred way of running it,
-though it will work in traditional environments as well.
+IRC idler is a program which idles in IRC for you. [sandstorm][1] will
+be the preferred way of running it, though it will work in traditional
+environments as well.
+
+This is very much a work in progress. I'm currently dogfooding the
+non-sandstorm version, but it's not exactly polished.
 
 # Why
 
@@ -41,6 +44,23 @@ machine. If you're developing on a platform other than linux/amd64, you
 can build via:
 
     GOOS=linux GOARCH=amd64 go build
+
+# Using (non-sandstorm)
+
+As an example, to connect to Freenode via TLS:
+
+    ./irc-idler -tls -raddr irc.freenode.net:6697 -laddr :6667
+
+Then, point your irc client at port 6667 on the host running irc-idler.
+
+Note well: irc-idler does not support accepting client connections via
+TLS, and it preforms no authentication. As a consequence, you should run
+it on a trusted network. In my case, I have it only listening on
+localhost on the server that's running it (and have port 6667 firewalled
+off for good measure), and I use ssh port forwarding to connect from my
+laptop/desktop.
+
+This will hopefully be more streamlined in the future.
 
 # License
 
