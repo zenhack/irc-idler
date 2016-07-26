@@ -29,6 +29,9 @@ func (e clientIDParseError) Error() string {
 func ParseClientID(text string) (ClientID, error) {
 	var ret ClientID
 	parts := strings.Split(text, "!")
+	if parts[0] == "" {
+		return ClientID{}, clientIDParseError("No nick in client ID.")
+	}
 	if len(parts) == 1 {
 		return ClientID{parts[0], "", ""}, nil
 	} else if len(parts) != 2 {
