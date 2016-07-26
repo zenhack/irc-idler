@@ -1,3 +1,5 @@
+![Travis CI Build Status](https://api.travis-ci.org/zenhack/irc-idler.svg?branch=master)
+
 IRC idler is a program which idles in IRC for you. [sandstorm][1] will
 be the preferred way of running it, though it will work in traditional
 environments as well.
