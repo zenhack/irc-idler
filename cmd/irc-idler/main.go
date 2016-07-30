@@ -14,7 +14,7 @@ import (
 var (
 	laddr    = flag.String("laddr", ":6667", "Local address to listen on")
 	raddr    = flag.String("raddr", "", "Remote address to connect to")
-	debuglog = flag.Bool("debuglog", false, "Enable debug logging.")
+	loglevel = flag.String("loglevel", "info", "Log level {debug,info,warn,error,fatal,panic}")
 
 	// TODO: default should probably be `true`.
 	useTLS = flag.Bool("tls", false, "Connect via tls.")
@@ -37,17 +37,29 @@ func checkFatal(err error) {
 
 func main() {
 	flag.Parse()
-	var logger *log.Logger
-	var dialer proxy.Dialer
-	if *debuglog {
-		logger = log.New()
+
+	level, err := log.ParseLevel(*loglevel)
+	if err != nil {
+		// We don't just print the error from logrus, since it talks about
+		// "logrus" levels, and I (zenhack) would prefer to keep that level
+		// of detail out of messages logged above debug level; end users
+		// shouldn't care what log package we're using.
+		fmt.Fprintf(os.Stderr, "Error: %q is not a valid log level.\n", *loglevel)
+		os.Exit(1)
 	}
+	logger := log.New()
+	logger.Level = level
+
+	var dialer proxy.Dialer
 	if *useTLS {
 		dialer = (*TLSDialer)(nil)
 	} else {
 		dialer = proxy.Direct
 	}
+
 	l, err := net.Listen("tcp", *laddr)
-	checkFatal(err)
+	if err != nil {
+		logger.Fatal(err)
+	}
 	ircproxy.NewProxy(l, dialer, *raddr, logger).Run()
 }
