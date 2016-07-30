@@ -1,9 +1,9 @@
 package proxy
 
 import (
+	log "github.com/Sirupsen/logrus"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"strings"
 	"time"
@@ -89,7 +89,8 @@ func (c *connection) shutdown() {
 //  preformed is very noisy; it is mostly meant for debugging.
 func NewProxy(l net.Listener, dialer proxy.Dialer, addr string, logger *log.Logger) *Proxy {
 	if logger == nil {
-		logger = log.New(ioutil.Discard, log.Prefix(), log.Flags())
+		logger = log.New()
+		logger.Out = ioutil.Discard
 	}
 	return &Proxy{
 		listener:    l,

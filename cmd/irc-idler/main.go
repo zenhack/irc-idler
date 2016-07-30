@@ -4,8 +4,8 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 	"golang.org/x/net/proxy"
-	"log"
 	"net"
 	"os"
 	ircproxy "zenhack.net/go/irc-idler/proxy"
@@ -40,7 +40,7 @@ func main() {
 	var logger *log.Logger
 	var dialer proxy.Dialer
 	if *debuglog {
-		logger = log.New(os.Stderr, log.Prefix(), log.Flags())
+		logger = log.New()
 	}
 	if *useTLS {
 		dialer = (*TLSDialer)(nil)
