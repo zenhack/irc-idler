@@ -119,22 +119,22 @@ func (c *connection) setup(conn net.Conn) {
 func (p *Proxy) acceptLoop() {
 	for {
 		conn, err := p.listener.Accept()
-		p.logger.Printf("acceptLoop(): Accept: (%v, %v)", conn, err)
+		p.logger.Debugf("acceptLoop(): Accept: (%v, %v)", conn, err)
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		p.acceptChan <- conn
-		p.logger.Println("acceptLoop(): Sent connection.")
+		p.logger.Debugln("acceptLoop(): Sent connection.")
 	}
 }
 
 // Send a message to the server. On failure, call p.reset()
 func (p *Proxy) sendServer(msg *irc.Message) error {
-	p.logger.Printf("sendServer(): sending message: %q\n", msg)
+	p.logger.Debugf("sendServer(): sending message: %q\n", msg)
 	err := p.server.WriteMessage(msg)
 	if err != nil {
-		p.logger.Printf("sendServer(): error: %v.\n")
+		p.logger.Errorf("sendServer(): error: %v.\n")
 		p.reset()
 	}
 	return err
@@ -142,10 +142,10 @@ func (p *Proxy) sendServer(msg *irc.Message) error {
 
 // Send a message to the client. On failure, call p.dropClient()
 func (p *Proxy) sendClient(msg *irc.Message) error {
-	p.logger.Printf("sendClient(): sending message: %q\n", msg)
+	p.logger.Debugf("sendClient(): sending message: %q\n", msg)
 	err := p.client.WriteMessage(msg)
 	if err != nil {
-		p.logger.Printf("sendClient(): error: %v.\n")
+		p.logger.Errorf("sendClient(): error: %v.\n", err)
 		p.dropClient()
 	}
 	return err
@@ -153,16 +153,16 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 
 func (p *Proxy) serve() {
 	for {
-		p.logger.Println("serve(): Top of loop")
+		p.logger.Debugln("serve(): Top of loop")
 		select {
 		case msg, ok := <-p.client.Chan:
-			p.logger.Println("serve(): Got client event")
+			p.logger.Debugln("serve(): Got client event")
 			p.handleClientEvent(msg, ok)
 		case msg, ok := <-p.server.Chan:
-			p.logger.Println("serve(): Got server event")
+			p.logger.Debugln("serve(): Got server event")
 			p.handleServerEvent(msg, ok)
 		case clientConn := <-p.acceptChan:
-			p.logger.Println("serve(): Got client connection")
+			p.logger.Debugln("serve(): Got client connection")
 			// A client connected. We boot the old one, if any:
 			p.client.shutdown()
 
@@ -201,7 +201,7 @@ func (p *Proxy) advanceHandshake(command string) {
 
 func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	if ok {
-		p.logger.Printf("handleClientEvent(): Recieved message: %q\n", msg)
+		p.logger.Debugf("handleClientEvent(): Recieved message: %q\n", msg)
 		if err := msg.Validate(); err != nil {
 			p.sendClient((*irc.Message)(err))
 			p.dropClient()
@@ -253,7 +253,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 			if !p.haveMsgCache {
 				// This is probably a bug. TODO: We should report it to the user in a
 				// more comprehensible way.
-				p.logger.Println("ERROR: no message cache on client reconnect!")
+				p.logger.Errorln("no message cache on client reconnect!")
 				p.reset()
 			} else {
 				// Server already thinks we're done; it won't send the welcome sequence,
@@ -328,12 +328,12 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	if ok {
 		if err := msg.Validate(); err != nil {
-			p.logger.Printf("handleServerEvent(): Got an invalid message"+
+			p.logger.Errorf("handleServerEvent(): Got an invalid message"+
 				"from server: %q (error: %q), disconnecting.\n", msg, err)
 			p.reset()
 			return
 		}
-		p.logger.Printf("handleServerEvent(): RecievedMessage: %q\n", msg)
+		p.logger.Debugf("handleServerEvent(): RecievedMessage: %q\n", msg)
 	} else {
 		// Server disconnect. We boot the client and start all over.
 		// TODO: might be nice to attempt a reconnect with cached credentials.
@@ -363,7 +363,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		clientID, err := irc.ParseClientID(clientIDString)
 
 		if err != nil {
-			p.logger.Printf(
+			p.logger.Errorf(
 				"Server sent a welcome message with an invalid "+
 					"client id: %q (%v). Dropping connections.",
 				clientIDString, err,
@@ -407,7 +407,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	case "JOIN", "KICK", "PART", "QUIT":
 		var setPresence func(m map[string]bool)
 		if msg.Command == "JOIN" {
-			p.logger.Printf("Got JOIN message for channel %q.", msg.Params[0])
+			p.logger.Debugf("Got JOIN message for channel %q.", msg.Params[0])
 			setPresence = func(m map[string]bool) {
 				m[msg.Params[0]] = true
 			}
@@ -443,24 +443,24 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 
 // Disconnect the client. If the handshake isn't done, disconnect the server too.
 func (p *Proxy) dropClient() {
-	p.logger.Println("dropClient(): dropping client connection.")
+	p.logger.Debugln("dropClient(): dropping client connection.")
 	p.client.shutdown()
 	if p.server.inHandshake() {
-		p.logger.Println("dropClient(): handshake incomplete; dropping server connection.")
+		p.logger.Debugln("dropClient(): handshake incomplete; dropping server connection.")
 		p.server.shutdown()
 	}
 }
 
 func (p *Proxy) reset() {
-	p.logger.Println("Dropping connections.")
+	p.logger.Debugln("Dropping connections.")
 	p.client.shutdown()
 	p.server.shutdown()
 }
 
 func (p *Proxy) replayLog(channelName string) {
-	p.logger.Printf("replayLog(%q)\n", channelName)
+	p.logger.Debugf("replayLog(%q)\n", channelName)
 	if p.messagelogs[channelName] == nil {
-		p.logger.Printf("No log for channel.")
+		p.logger.Debugln("No log for channel.")
 		return
 	}
 	for _, v := range p.messagelogs[channelName] {
@@ -470,7 +470,7 @@ func (p *Proxy) replayLog(channelName string) {
 }
 
 func (p *Proxy) logMessage(msg *irc.Message) {
-	p.logger.Printf("logMessage(%q)\n", msg)
+	p.logger.Debugln("logMessage(%q)\n", msg)
 	// For now we only log messages. we'll want to add to this list in
 	// the future.
 	switch msg.Command {
