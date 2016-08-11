@@ -12,6 +12,11 @@ import (
 )
 
 func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		w.Write([]byte(
+			"Hey! IRC idler doesn't have a web interface yet, but this " +
+				"placeholder page seems to be working."))
+	})
 	ctx := context.Background()
 	api, err := grain.ConnectAPI(ctx, websession.FromHandler(ctx, http.DefaultServeMux))
 
