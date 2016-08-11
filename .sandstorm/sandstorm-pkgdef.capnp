@@ -17,17 +17,17 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appTitle = (defaultText = "Example App"),
+    appTitle = (defaultText = "IRC Idler"),
 
     appVersion = 0,  # Increment this for every release.
 
-    appMarketingVersion = (defaultText = "0.0.0"),
+    appMarketingVersion = (defaultText = "0.1"),
     # Human-readable representation of appVersion. Should match the way you
     # identify versions of your app in documentation and marketing.
 
     actions = [
       # Define your "new document" handlers here.
-      ( title = (defaultText = "New Instance"),
+      ( title = (defaultText = "New Proxy"),
         command = .myCommand
         # The command to run when starting for the first time. (".myCommand"
         # is just a constant defined at the bottom of the file.)
@@ -54,18 +54,20 @@ const pkgdef :Spk.PackageDefinition = (
         #marketBig = (svg = embed "path/to/market-big-300x300.svg"),
       ),
 
-      website = "http://example.com",
+      website = "https://github.com/zenhack/irc-idler",
       # This should be the app's main website url.
 
-      codeUrl = "http://example.com",
+      codeUrl = "https://github.com/zenhack/irc-idler",
       # URL of the app's source code repository, e.g. a GitHub URL.
       # Required if you specify a license requiring redistributing code, but optional otherwise.
 
-      license = (none = void),
+      license = (openSource = gpl3),
       # The license this package is distributed under.  See
       # https://docs.sandstorm.io/en/latest/developing/publishing-apps/#license
 
-      categories = [],
+      categories = [
+        communications
+      ],
       # A list of categories/genres to which this app belongs, sorted with best fit first.
       # See the list of categories at
       # https://docs.sandstorm.io/en/latest/developing/publishing-apps/#categories
@@ -73,7 +75,7 @@ const pkgdef :Spk.PackageDefinition = (
       author = (
         # Fields relating to the author of this app.
 
-        contactEmail = "youremail@example.com",
+        contactEmail = "ian@zenhack.net",
         # Email address to contact for any issues with this app. This includes end-user support
         # requests as well as app store administrator requests, so it is very important that this be a
         # valid address with someone paying attention to it.
@@ -91,12 +93,6 @@ const pkgdef :Spk.PackageDefinition = (
         #
         # Further details including how to set up GPG and how to use keybase.io can be found
         # at https://docs.sandstorm.io/en/latest/developing/publishing-apps/#verify-your-identity
-
-        upstreamAuthor = "Example App Team",
-        # Name of the original primary author of this app, if it is different from the person who
-        # produced the Sandstorm package. Setting this implies that the author connected to the PGP
-        # signature only "packaged" the app for Sandstorm, rather than developing the app.
-        # Remove this line if you consider yourself as the author of the app.
       ),
 
       #pgpKeyring = embed "path/to/pgp-keyring",
@@ -114,7 +110,7 @@ const pkgdef :Spk.PackageDefinition = (
       # in an app store. Note that the Markdown is not permitted to contain HTML nor image tags (but
       # you can include a list of screenshots separately).
 
-      shortDescription = (defaultText = "one-to-three words"),
+      shortDescription = (defaultText = "IRC idling proxy"),
       # A very short (one-to-three words) description of what the app does. For example,
       # "Document editor", or "Notetaking", or "Email client". This will be displayed under the app
       # title in the grid view in the app market.
@@ -245,3 +241,5 @@ const myCommand :Spk.Manifest.Command = (
     # the app's Sandstorm-specific integration code.
   ]
 );
+
+# vim: set ts=2 sw=2 et :
