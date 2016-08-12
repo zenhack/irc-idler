@@ -1,4 +1,4 @@
-/sandstorm-files.list
+/.sandstorm/sandstorm-files.list
 /.sandstorm/gopath
 *.spk
 *.swp
