@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 	"time"
-	"zenhack.net/go/irc-idler/webui"
+	"zenhack.net/go/irc-idler/sandstorm/webui"
 	"zenhack.net/go/sandstorm/grain"
 	"zenhack.net/go/sandstorm/websession"
 )

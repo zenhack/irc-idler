@@ -9,7 +9,7 @@ deps='
 '
 
 for d in $deps; do
-	go get $d
+	[ -d $d ] || go get $d
 done
 
 cd /opt/app/cmd/irc-idler-sandstorm
