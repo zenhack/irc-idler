@@ -7,16 +7,13 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"zenhack.net/go/irc-idler/webui"
 	"zenhack.net/go/sandstorm/grain"
 	"zenhack.net/go/sandstorm/websession"
 )
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		w.Write([]byte(
-			"Hey! IRC idler doesn't have a web interface yet, but this " +
-				"placeholder page seems to be working."))
-	})
+	webui.ConfigureRoutes()
 	ctx := context.Background()
 	api, err := grain.ConnectAPI(ctx, websession.FromHandler(ctx, http.DefaultServeMux))
 
