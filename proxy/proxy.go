@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
+	"zenhack.net/go/irc-idler/storage"
+	"zenhack.net/go/irc-idler/storage/ephemeral"
 
 	"golang.org/x/net/proxy"
 )
@@ -26,7 +28,7 @@ type Proxy struct {
 	err    error
 
 	// Per-channel IRC messages recieved while client is not in the channel.
-	messagelogs map[string][]*irc.Message
+	messagelogs storage.Store
 
 	// recorded server responses; if the server already thinks we're logged in, we
 	// can't get it to send these again, so we record them the first
@@ -100,7 +102,7 @@ func NewProxy(l net.Listener, dialer proxy.Dialer, addr string, logger *log.Logg
 		server:      &connection{},
 		logger:      logger,
 		acceptChan:  make(chan net.Conn),
-		messagelogs: make(map[string][]*irc.Message),
+		messagelogs: ephemeral.NewStore(),
 	}
 }
 
@@ -456,14 +458,39 @@ func (p *Proxy) reset() {
 
 func (p *Proxy) replayLog(channelName string) {
 	p.logger.Debugf("replayLog(%q)\n", channelName)
-	if p.messagelogs[channelName] == nil {
-		p.logger.Debugln("No log for channel.")
+	chLog, err := p.messagelogs.GetChannel(channelName)
+	if err != nil {
+		p.logger.Debugln("messagelogs.GetChannle(): %v", err)
 		return
 	}
-	for _, v := range p.messagelogs[channelName] {
-		p.sendClient(v)
+
+	cursor, err := chLog.Replay()
+	if err != nil {
+		p.logger.Errorf(
+			"Got an error replaying the log for %q: %q. ",
+			channelName, err)
+		return
 	}
-	delete(p.messagelogs, channelName)
+	defer cursor.Close()
+	for {
+		msg, err := cursor.Get()
+		if err == nil {
+			p.sendClient(msg)
+		} else if err == io.EOF {
+			p.logger.Debugf("Done replaying log for %q.", channelName)
+			chLog.Clear()
+			return
+		} else {
+			p.logger.Errorf(
+				"Got an error replaying the log for %q: %q. "+
+					"Not clearing logs, just in case; "+
+					"this may result in duplicate messages.\n",
+				channelName, err,
+			)
+			return
+		}
+		cursor.Next()
+	}
 }
 
 func (p *Proxy) logMessage(msg *irc.Message) {
@@ -477,9 +504,13 @@ func (p *Proxy) logMessage(msg *irc.Message) {
 	}
 
 	channelName := msg.Params[0]
-	if p.messagelogs[channelName] == nil {
-		p.messagelogs[channelName] = []*irc.Message{msg}
-	} else {
-		p.messagelogs[channelName] = append(p.messagelogs[channelName], msg)
+	chLog, err := p.messagelogs.GetChannel(channelName)
+	if err != nil {
+		p.logger.Errorf("Failed to get log for %q: %q.\n", channelName, err)
+		return
+	}
+	err = chLog.LogMessage(msg)
+	if err != nil {
+		p.logger.Errorf("Failed log message %q: %q.\n", msg, err)
 	}
 }
