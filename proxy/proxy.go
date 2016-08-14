@@ -65,6 +65,18 @@ func (s *session) inHandshake() bool {
 	return !(s.nickRecieved && s.userRecieved)
 }
 
+// Return true if the prefix identifies the user associated with this session,
+// false otherwise.
+func (s *session) IsMe(prefix string) bool {
+	clientID, err := irc.ParseClientID(prefix)
+	if err != nil {
+		// TODO: debug logging here. Control flow makes it a bit hard.
+		// We should probably start using contexts.
+		return false
+	}
+	return clientID.Nick == s.ClientID.Nick
+}
+
 // Tear down the connection. If it is not currently active, this is a noop.
 func (c *connection) shutdown() {
 	if c == nil || c.Closer == nil || c.Chan == nil {
@@ -395,7 +407,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.replayLog(p.client.session.ClientID.Nick)
 	case "PRIVMSG", "NOTICE":
 		if p.client.session.channels[msg.Params[0]] ||
-			msg.Params[0] == p.client.session.ClientID.Nick {
+			p.client.session.IsMe(msg.Params[0]) {
 
 			if p.sendClient(msg) != nil {
 				p.logMessage(msg)
@@ -416,8 +428,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			}
 		}
 
-		clientid, err := irc.ParseClientID(msg.Prefix)
-		isMe := err == nil && clientid.Nick == p.server.session.ClientID.Nick
+		isMe := p.server.session.IsMe(msg.Prefix)
 		if isMe {
 			setPresence(p.server.session.channels)
 		}
