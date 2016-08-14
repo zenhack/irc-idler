@@ -62,3 +62,38 @@ func TestReadBack(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Make sure ParseMessage obeys the same rules as checkReadBack is checking.
+func TestParseStringReadBack(t *testing.T) {
+	err := quick.Check(func(msg1 *Message) bool {
+		str1 := msg1.String()
+		msg2, err := ParseMessage(msg1.String())
+		if err != nil {
+			fmt.Printf("%q", err)
+			return false
+		}
+		if !msgEq(msg1, msg2) {
+			fmt.Printf("Messages differ: msg1: %v vs msg2: %v\n", msg1, msg2)
+			return false
+		}
+		str2 := msg2.String()
+		if str1 != str2 {
+			fmt.Printf("Strings differ: str1: %q vs str2: %q\n", str1, str2)
+			return false
+		}
+		return true
+	}, nil)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Make sure ParseMessage doesn't accept strings with more than one message
+func TestParseStringOneMessageOnly(t *testing.T) {
+	_, err := ParseMessage("PING foo\r\nPONG foo\r\n")
+	if err == nil {
+		t.Fatal("ParseMessage() did not return an error on a string " +
+			"with two messages.")
+	}
+}

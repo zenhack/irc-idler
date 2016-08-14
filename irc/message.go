@@ -149,6 +149,22 @@ func (r ioReader) ReadMessage() (*Message, error) {
 	return parseMessage(buf)
 }
 
+// Parse a message from a string. The string must contain exactly one message.
+func ParseMessage(input string) (*Message, error) {
+	r := NewReader(strings.NewReader(input))
+	msg, err := r.ReadMessage()
+	if err != nil {
+		return nil, err
+	}
+	_, err = r.ReadMessage()
+	if err != io.EOF {
+		return nil, fmt.Errorf(
+			"More than one message in string passed to parseMessage: %q",
+			input)
+	}
+	return msg, nil
+}
+
 // parse the message in input
 func parseMessage(input *bytes.Buffer) (*Message, error) {
 	result := &Message{}
