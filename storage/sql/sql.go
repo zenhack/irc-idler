@@ -1,3 +1,6 @@
+// An SQL database backed implementation of storage.Store.
+//
+// This package is not actually implemented yet.
 package sql
 
 import (
@@ -19,6 +22,7 @@ type cursor struct {
 	rows sql.Rows
 }
 
+// Return a new store backed by the database `db`.
 func NewStore(db *sql.DB) storage.Store {
 	return &store{db}
 }

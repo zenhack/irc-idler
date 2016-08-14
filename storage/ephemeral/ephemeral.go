@@ -1,3 +1,5 @@
+// Package ephemeral defines a storage.Store implementation that stores
+// messages in an in-memory data structure.
 package ephemeral
 
 import (
@@ -7,19 +9,31 @@ import (
 )
 
 type store struct {
+	// Our store implementation closely mirrors the interface: we have a map
+	// mapping chnanel names to slices of messages. If there are no messages
+	// for a given channel that entry in the map will be nil.
 	channels map[string][]*irc.Message
 }
 
 type channelLog struct {
+	// Pointer to the store. We can't just store the slice itself, since
+	// it may be nil, and if the user calls Clear(), we need to *set it*
+	// to nil.
 	store *store
-	name  string
+
+	// name of the channel
+	name string
 }
 
 type cursor struct {
+	// messages in the log
 	msgs []*irc.Message
-	i    int
+
+	// index into msgs
+	i int
 }
 
+// Return a new memory-backed Store.
 func NewStore() storage.Store {
 	return &store{channels: make(map[string][]*irc.Message)}
 }
