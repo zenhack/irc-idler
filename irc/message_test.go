@@ -2,7 +2,9 @@ package irc
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
+	"testing/quick"
 )
 
 // Compare m1 and m2 for equality. We can't just use (==), as it
@@ -30,24 +32,33 @@ var sampleMessages = []*Message{
 }
 
 // Verify that writing out msg and reading it back results in the same value.
-func checkReadBack(t *testing.T, msg *Message) {
+func checkReadBack(msg *Message) bool {
 	buf := &bytes.Buffer{}
 	msg.WriteTo(buf)
 	result, err := NewReader(buf).ReadMessage()
 	if err != nil {
-		t.Fatalf("Error reading back message: %v\n", err)
+		fmt.Printf("Error reading back message: %v\n", err)
+		return false
 	} else if !msgEq(msg, result) {
-		t.Fatalf(
+		fmt.Printf(
 			"Read message %v differs from written %v.\n",
 			result,
 			msg,
 		)
+		return false
 	}
+	return true
 }
 
-// Call checkReadBack on each of the messages in sampleMessages.
+// Call checkReadBack on each of the messages in sampleMessages, as well
+// as some randomized messages.
 func TestReadBack(t *testing.T) {
 	for _, m := range sampleMessages {
-		checkReadBack(t, m)
+		if !checkReadBack(m) {
+			t.FailNow()
+		}
+	}
+	if err := quick.Check(checkReadBack, nil); err != nil {
+		t.Fatal(err)
 	}
 }

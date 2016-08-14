@@ -3,6 +3,7 @@ package irc
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"math/rand"
 	"reflect"
 )
@@ -37,7 +38,7 @@ func genMessage(r *rand.Rand) *Message {
 	params := []string{}
 
 	for i := numParams; i > 0; i-- {
-		paramLen := int(r.Float64()*float64(spaceLeft/i)) + 1
+		paramLen := int(r.Float64() * float64(spaceLeft/i))
 		if paramLen == 0 {
 			continue
 		}
@@ -57,15 +58,19 @@ func genBase64(length int, r *rand.Rand) string {
 	buf := &bytes.Buffer{}
 	b64 := base64.NewEncoder(base64.StdEncoding, buf)
 
-	// Using base64 reduces the information content of a byte; you
-	// have 64 (2^5) possible values insead of 256 (2^8) possible
-	// values. So we reduce the length of the random binary buffer
-	// accordingly:
-	randBytes := make([]byte, int(float64(length)*(5/8)))
+	// We end up not using all of this, because encoding it as base64
+	// elongates it, and then we truncate it back to length.
+	randBytes := make([]byte, length)
 
 	r.Read(randBytes)
 	b64.Write(randBytes)
 	b64.Close()
 
-	return buf.String()
+	str := buf.Bytes()
+	str = str[:length]
+	if len(str) != length {
+		panic(fmt.Sprintf("Base64 string is the wrong length: wanted %d but got %d",
+			length, len(str)))
+	}
+	return string(str)
 }
