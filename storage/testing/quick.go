@@ -2,8 +2,6 @@
 package testing
 
 import (
-	"bytes"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"math/rand"
@@ -12,6 +10,9 @@ import (
 	"testing/quick"
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/storage"
+
+	// for casting reflect.Values to their actual values:
+	"unsafe"
 )
 
 // A randomized black-box test for store implementations. It does the
@@ -122,59 +123,9 @@ func genChannel(r *rand.Rand) []*irc.Message {
 	numMessages := int(r.Float64() * 70)
 	ret := make([]*irc.Message, numMessages)
 	for i := range ret {
-		ret[i] = genMessage(r)
+		value := ret[i].Generate(r, 0)
+		ret[i] = (*irc.Message)(unsafe.Pointer(value.Pointer()))
+		//		genMessage(r)
 	}
 	return ret
-}
-
-func genMessage(r *rand.Rand) *irc.Message {
-	spaceLeft := irc.MaxMessageLen - 2 // for CLRF
-	prefixLen := int(r.Float64() * 16)
-	spaceLeft -= prefixLen
-	if prefixLen != 0 {
-		spaceLeft -= 2 // leading colon plus trailing space.
-	}
-
-	commandLen := int(r.Float64()*16) + 1
-	spaceLeft -= commandLen
-
-	numParams := int(r.Float64() * 16)
-
-	// A space between each pair of args (and before the first one, to
-	// separate it from the command), and a leading ':' for the last arg.
-	spaceLeft -= numParams + 1
-
-	params := []string{}
-
-	for i := numParams; i > 0; i-- {
-		paramLen := int(r.Float64()*float64(spaceLeft/i)) + 1
-		if paramLen == 0 {
-			continue
-		}
-		params = append(params, genBase64(paramLen, r))
-		spaceLeft -= paramLen
-	}
-
-	return &irc.Message{
-		Prefix:  genBase64(prefixLen, r),
-		Command: genBase64(commandLen, r),
-		Params:  params,
-	}
-}
-
-func genBase64(length int, r *rand.Rand) string {
-	buf := &bytes.Buffer{}
-	b64 := base64.NewEncoder(base64.StdEncoding, buf)
-
-	// Using base64 reduces the information content of a byte; you
-	// have 64 (2^5) possible values insead of 256 (2^8) possible
-	// values. So we reduce the length of the random binary buffer
-	// accordingly:
-	randBytes := make([]byte, int(float64(length)*(5/8)))
-
-	r.Read(randBytes)
-	b64.Write(randBytes)
-	b64.Close()
-
-	return buf.String()
 }
