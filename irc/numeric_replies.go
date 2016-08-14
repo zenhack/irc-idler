@@ -90,6 +90,7 @@ const (
 	RPL_UNIQOPIS        = "325"
 	RPL_NOTOPIC         = "331"
 	RPL_TOPIC           = "332"
+	RPL_TOPICWHOTIME    = "333" // not in the spec, but seen on freenode.
 	RPL_INVITING        = "341"
 	RPL_SUMMONING       = "342"
 	RPL_INVITELIST      = "346"
