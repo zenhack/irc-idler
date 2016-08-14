@@ -76,12 +76,19 @@ func checkClear(m map[string][]*irc.Message, store storage.Store) bool {
 
 func checkFilled(m map[string][]*irc.Message, store storage.Store) bool {
 	for k, v := range m {
-		log, _ := store.GetChannel(k)
-		cursor, _ := log.Replay()
+		log, err := store.GetChannel(k)
+		if err != nil {
+			panic(fmt.Sprintf("Getting channel %q: %q", k, err))
+		}
+		cursor, err := log.Replay()
+		if err != nil {
+			panic(fmt.Sprintf("Getting log for channel %q: %q", k, err))
+		}
 		for i, msg := range v {
 			loggedMsg, err := cursor.Get()
 			if err != nil {
-				fmt.Printf("Unexpected error getting log entry %d: %v\n", i, err)
+				fmt.Printf("Unexpected error getting log entry %d for channel %q: %q\n",
+					i, k, err)
 				cursor.Close()
 				return false
 			}
@@ -114,7 +121,11 @@ func genStore(r *rand.Rand) reflect.Value {
 
 	for i := 0; i < numChannels; i++ {
 		value, _ := quick.Value(reflect.TypeOf(""), r)
-		ret[value.String()] = genChannel(r)
+		buf := []byte(value.String())
+		if len(buf) > 16 { // relatively arbitrary cap
+			buf = buf[:16]
+		}
+		ret[fmt.Sprintf("%x", buf)] = genChannel(r)
 	}
 	return reflect.ValueOf(ret)
 }
