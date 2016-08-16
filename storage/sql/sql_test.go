@@ -10,11 +10,17 @@ import (
 
 func TestStore(t *testing.T) {
 	var db *sql.DB
+	defer func() {
+		if db != nil {
+			db.Close()
+		}
+	}()
 	stest.RandTest(t, func() storage.Store {
 		if db != nil {
-			// Close the db from last time. We'll leak one at the end, but this will
-			// keep the leaks to a minimum. TODO: would be nice to have a less-hacky
-			// way of cleaning up.
+			// Close the db from last time. We want a fresh db every time, so we
+			// re-create it. We can't easily close it afterwards, since RandTest calls
+			// Fatal, so we close the previous test's DB, and then get the last one in
+			// a top-level defer.
 			db.Close()
 		}
 		var err error
