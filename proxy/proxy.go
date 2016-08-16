@@ -148,7 +148,7 @@ func (p *Proxy) sendServer(msg *irc.Message) error {
 	p.logger.Debugf("sendServer(): sending message: %q\n", msg)
 	err := p.server.WriteMessage(msg)
 	if err != nil {
-		p.logger.Errorf("sendServer(): error: %v.\n")
+		p.logger.Errorf("sendServer(): error: %v.\n", err)
 		p.reset()
 	}
 	return err
