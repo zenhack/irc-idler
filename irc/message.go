@@ -77,10 +77,10 @@ type ioWriter struct {
 }
 
 func NewWriter(w io.Writer) Writer {
-	return ioWriter{w: w}
+	return &ioWriter{w: w}
 }
 
-func (w ioWriter) WriteMessage(m *Message) error {
+func (w *ioWriter) WriteMessage(m *Message) error {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	_, err := m.WriteTo(w.w)
@@ -123,7 +123,7 @@ type ioReader struct {
 
 // Return a new Reader reading from r.
 func NewReader(r io.Reader) Reader {
-	ret := ioReader{scanner: bufio.NewScanner(r)}
+	ret := &ioReader{scanner: bufio.NewScanner(r)}
 	ret.scanner.Buffer(make([]byte, MaxMessageLen), MaxMessageLen)
 	return ret
 }
@@ -133,7 +133,7 @@ func NewReader(r io.Reader) Reader {
 // TODO: document errors. Right now just underlying IO errors.
 //
 // TODO: document the extent to which we validate the input.
-func (r ioReader) ReadMessage() (*Message, error) {
+func (r *ioReader) ReadMessage() (*Message, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	// We use bufio.Scanner to get each line, then parse the line from
