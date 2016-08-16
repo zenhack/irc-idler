@@ -416,30 +416,29 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			p.logMessage(msg)
 		}
 	case "JOIN", "KICK", "PART", "QUIT":
-		var setPresence func(m map[string]bool)
-		if msg.Command == "JOIN" {
-			p.logger.Debugf("Got JOIN message for channel %q.", msg.Params[0])
-			setPresence = func(m map[string]bool) {
-				m[msg.Params[0]] = true
+		// Set our presence for the channel according to the message; if it's not
+		// about us, nothing changes. otherwise, for a JOIN message we mark
+		// ourselves present, and otherwise we mark ourselves absent.
+		setPresence := func(m map[string]bool) {
+			if !p.server.session.IsMe(msg.Prefix) {
+				return
 			}
-		} else {
-			setPresence = func(m map[string]bool) {
+			if msg.Command == "JOIN" {
+				m[msg.Params[0]] = true
+			} else {
 				delete(m, msg.Params[0])
 			}
 		}
+		setPresence(p.server.session.channels)
 
-		isMe := p.server.session.IsMe(msg.Prefix)
-		if isMe {
-			setPresence(p.server.session.channels)
-		}
-		if p.client.inHandshake() {
+		p.logger.Debugf("Got %s message for channel %q.", msg.Command, msg.Params[0])
+
+		if p.client.inHandshake() || p.sendClient(msg) != nil {
+			// Can't send the message to the client, so log it.
 			p.logMessage(msg)
-		} else if p.sendClient(msg) == nil {
-			if isMe {
-				setPresence(p.client.session.channels)
-			}
 		} else {
-			p.logMessage(msg)
+			// client knows about the change; update their state.
+			setPresence(p.client.session.channels)
 		}
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
