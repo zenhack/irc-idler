@@ -67,8 +67,26 @@ type ioReadWriter struct {
 	Writer
 }
 
+type ReadWriteCloser interface {
+	Reader
+	Writer
+	io.Closer
+}
+
+type ioReadWriteCloser struct {
+	ReadWriter
+	io.Closer
+}
+
 func NewReadWriter(rw io.ReadWriter) ReadWriter {
 	return ioReadWriter{NewReader(rw), NewWriter(rw)}
+}
+
+func NewReadWriteCloser(rwc io.ReadWriteCloser) ReadWriteCloser {
+	return ioReadWriteCloser{
+		ReadWriter: NewReadWriter(rwc),
+		Closer:     rwc,
+	}
 }
 
 type ioWriter struct {

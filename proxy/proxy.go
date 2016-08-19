@@ -14,18 +14,32 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+type Connector interface {
+	Connect() (irc.ReadWriteCloser, error)
+}
+
+type DialerConnector struct {
+	proxy.Dialer
+	Network string
+	Addr    string
+}
+
+func (dc *DialerConnector) Connect() (irc.ReadWriteCloser, error) {
+	conn, err := dc.Dial(dc.Network, dc.Addr)
+	if err != nil {
+		return nil, err
+	}
+	return irc.NewReadWriteCloser(conn), err
+}
+
 type Proxy struct {
-	// listens for client connections:
-	listener net.Listener
+	// Incomming client connections:
+	clientConns <-chan irc.ReadWriteCloser
 
-	// Incomming connections from acceptLoop:
-	acceptChan chan net.Conn
-
-	client *connection
-	server *connection
-	addr   string // address of IRC server to connect to.
-	dialer proxy.Dialer
-	err    error
+	client          *connection
+	server          *connection
+	serverConnector Connector
+	err             error
 
 	// Per-channel IRC messages recieved while client is not in the channel.
 	messagelogs storage.Store
@@ -45,8 +59,7 @@ type Proxy struct {
 }
 
 type connection struct {
-	io.Closer
-	irc.ReadWriter
+	irc.ReadWriteCloser
 	Chan <-chan *irc.Message
 	session
 }
@@ -79,7 +92,7 @@ func (s *session) IsMe(prefix string) bool {
 
 // Tear down the connection. If it is not currently active, this is a noop.
 func (c *connection) shutdown() {
-	if c == nil || c.Closer == nil || c.Chan == nil {
+	if c == nil || c.ReadWriteCloser == nil || c.Chan == nil {
 		return
 	}
 	c.Close()
@@ -101,45 +114,41 @@ func (c *connection) shutdown() {
 // `addr` is the tcp address of the server
 // `logger`, if non-nil, will be used for informational logging. Note that the logging
 //  preformed is very noisy; it is mostly meant for debugging.
-func NewProxy(l net.Listener, dialer proxy.Dialer, addr string, logger *log.Logger) *Proxy {
+func NewProxy(clientConns <-chan irc.ReadWriteCloser, serverConnector Connector, logger *log.Logger) *Proxy {
 	if logger == nil {
 		logger = log.New()
 		logger.Out = ioutil.Discard
 	}
 	return &Proxy{
-		listener:    l,
-		dialer:      dialer,
-		addr:        addr,
-		client:      &connection{},
-		server:      &connection{},
-		logger:      logger,
-		acceptChan:  make(chan net.Conn),
-		messagelogs: ephemeral.NewStore(),
+		clientConns:     clientConns,
+		serverConnector: serverConnector,
+		client:          &connection{},
+		server:          &connection{},
+		logger:          logger,
+		messagelogs:     ephemeral.NewStore(),
 	}
 }
 
 func (p *Proxy) Run() {
-	go p.acceptLoop()
 	p.serve()
 }
 
-func (c *connection) setup(conn net.Conn) {
-	c.Closer = conn
-	c.ReadWriter = irc.NewReadWriter(conn)
-	c.Chan = irc.ReadAll(c)
+func (c *connection) setup(conn irc.ReadWriteCloser) {
+	c.ReadWriteCloser = conn
+	c.Chan = irc.ReadAll(conn)
 	c.session.channels = make(map[string]bool)
 }
 
-func (p *Proxy) acceptLoop() {
+func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *log.Logger) {
 	for {
-		conn, err := p.listener.Accept()
-		p.logger.Debugf("acceptLoop(): Accept: (%v, %v)", conn, err)
+		conn, err := l.Accept()
+		logger.Debugf("AcceptLoop(): Accept: (%v, %v)", conn, err)
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		p.acceptChan <- conn
-		p.logger.Debugln("acceptLoop(): Sent connection.")
+		acceptChan <- irc.NewReadWriteCloser(conn)
+		logger.Debugln("AcceptLoop(): Sent connection.")
 	}
 }
 
@@ -175,7 +184,7 @@ func (p *Proxy) serve() {
 		case msg, ok := <-p.server.Chan:
 			p.logger.Debugln("serve(): Got server event")
 			p.handleServerEvent(msg, ok)
-		case clientConn := <-p.acceptChan:
+		case clientConn := <-p.clientConns:
 			p.logger.Debugln("serve(): Got client connection")
 			// A client connected. We boot the old one, if any:
 			p.client.shutdown()
@@ -185,7 +194,7 @@ func (p *Proxy) serve() {
 			// If we're not done with the handshake, restart the server connection too.
 			if p.server.inHandshake() {
 				p.server.shutdown()
-				serverConn, err := p.dialer.Dial("tcp", p.addr)
+				serverConn, err := p.serverConnector.Connect()
 				if err != nil {
 					// Server connection failed. Boot the client and let
 					// them deal with it:

@@ -8,6 +8,7 @@ import (
 	"golang.org/x/net/proxy"
 	"net"
 	"os"
+	"zenhack.net/go/irc-idler/irc"
 	ircproxy "zenhack.net/go/irc-idler/proxy"
 )
 
@@ -61,5 +62,13 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	ircproxy.NewProxy(l, dialer, *raddr, logger).Run()
+
+	clientConns := make(chan irc.ReadWriteCloser)
+	connector := &ircproxy.DialerConnector{
+		Dialer:  dialer,
+		Network: "tcp",
+		Addr:    *raddr,
+	}
+	go ircproxy.AcceptLoop(l, clientConns, logger)
+	ircproxy.NewProxy(clientConns, connector, logger).Run()
 }
