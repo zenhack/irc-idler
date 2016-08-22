@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+	<!-- TODO: TLS checkbox, maybe make this less bare-bones. -->
+	<head>
+		<title>IRC Idler - Settings</title>
+		<script src="/static/get_ip_network.js"></script>
+	</head>
+	<body>
+		<form action="/proxy-settings" method="post">
+			<div>
+				<label for="host">Host:</label>
+				<input type="text" id="host" name="host" />
+			</div>
+			<div>
+				<label for="port">Port:</label>
+				<input type="text" id="port" name="port" />
+			</div>
+			<div>
+				<button type="submit">Apply</button>
+				<input type="hidden" name="_xsrf_token" value="{{ .XSRFToken }}" />
+			</div>
+		</form>
+		<button id="request_cap">Request Network Access</button>
+	</body>
+</html>

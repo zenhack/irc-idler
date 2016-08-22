@@ -1,6 +1,12 @@
 package webui
 
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"golang.org/x/net/xsrftoken"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -8,60 +14,81 @@ import (
 
 const staticPath = "/opt/app/sandstorm/webui/"
 
-// TODO: make this a template, xsrf, maybe make it not look totally bare bones.
-const index = `<!DOCTYPE html>
-<html>
-	<head>
-		<title>IRC Idler - Settings</title>
-		<script src="/static/get_ip_network.js"></script>
-	</head>
-	<body>
-		<form action="/proxy-settings" method="post">
-			<div>
-				<label for="host">Host:</label>
-				<input type="text" id="host" name="host" />
-			</div>
-			<div>
-				<label for="port">Port:</label>
-				<input type="text" id="port" name="port" />
-			</div>
-			<!-- TODO: TLS checkbox -->
-			<div>
-				<button type="submit">Apply</button>
-			</div>
-		</form>
-		<button id="request_cap">Request Network Access</button>
-	</body>
-</html>
-`
+var (
+	indexTpl = template.Must(template.ParseFiles(staticPath + "templates/index.html"))
 
-func mainPage(w http.ResponseWriter, req *http.Request) {
-	os.Stdout.Write([]byte("mainPage()\n"))
-	if req.URL.Path != "/" {
-		// The way ServeMux's routing works we can't easily specify a
-		// Handler that *just* covers the root, so we do this instead.
-		w.WriteHeader(404)
-		w.Write([]byte("Not found"))
-		return
+	badXSRFToken = errors.New("Bad XSRF Token")
+)
+
+func genXSRFKey() (string, error) {
+	rawBytes := make([]byte, 128/8) // 128 bit key
+	_, err := rand.Read(rawBytes)
+	if err != nil {
+		return "", err
 	}
-	w.Write([]byte(index))
+	buf := &bytes.Buffer{}
+	enc := base64.NewEncoder(base64.RawStdEncoding, buf)
+	enc.Write(rawBytes)
+	enc.Close()
+	return buf.String(), nil
 }
 
-func applySettings(w http.ResponseWriter, req *http.Request) {
-}
-
-func ipNetworkCap(w http.ResponseWriter, req *http.Request) {
-	if req.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write([]byte("Method not allowed.\n"))
-		return
+func checkXSRF(key, userID, actionID string, req *http.Request) error {
+	token := req.FormValue("_xsrf_token")
+	if !xsrftoken.Valid(token, key, userID, actionID) {
+		return badXSRFToken
 	}
-	io.Copy(os.Stdout, req.Body)
+	return nil
 }
 
-func ConfigureRoutes() {
-	http.HandleFunc("/", mainPage)
-	http.Handle("/static/", http.FileServer(http.Dir(staticPath)))
-	http.HandleFunc("/proxy-settings/", applySettings)
-	http.HandleFunc("/ip-network-cap", ipNetworkCap)
+func NewHandler() (http.Handler, error) {
+	serveMux := http.NewServeMux()
+	// TODO: might make sense to not generate this on every startup:
+	xsrfKey, err := genXSRFKey()
+	if err != nil {
+		return nil, err
+	}
+
+	serveMux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/" {
+			// The way ServeMux's routing works we can't easily specify a
+			// Handler that *just* covers the root, so we do this instead.
+			w.WriteHeader(404)
+			w.Write([]byte("Not found"))
+			return
+		}
+		token := xsrftoken.Generate(
+			xsrfKey,
+			"TODO",
+			"/proxy-settings/",
+		)
+		tplCtx := struct{ XSRFToken string }{token}
+		indexTpl.Execute(w, &tplCtx)
+	})
+
+	serveMux.Handle("/static/", http.FileServer(http.Dir(staticPath)))
+
+	serveMux.HandleFunc("/proxy-settings/", func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != "POST" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte("Method not allowed.\n"))
+			return
+		}
+		if err := checkXSRF(xsrfKey, "TODO", "/proxy-settings/", req); err != nil {
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Write([]byte("ok!"))
+	})
+
+	serveMux.HandleFunc("/ip-network-cap", func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != "POST" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte("Method not allowed.\n"))
+			return
+		}
+		io.Copy(os.Stdout, req.Body)
+	})
+	return serveMux, nil
 }

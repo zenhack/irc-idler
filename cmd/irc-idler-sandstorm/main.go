@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"golang.org/x/net/context"
 	"log"
-	"net/http"
 	"os"
 	"time"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
@@ -13,9 +12,9 @@ import (
 )
 
 func main() {
-	webui.ConfigureRoutes()
+	handler, err := webui.NewHandler()
 	ctx := context.Background()
-	api, err := grain.ConnectAPI(ctx, websession.FromHandler(ctx, http.DefaultServeMux))
+	api, err := grain.ConnectAPI(ctx, websession.FromHandler(ctx, handler))
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: ", err)
