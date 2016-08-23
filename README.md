@@ -28,7 +28,7 @@ slightly more complicated. We'd like to still leverage sandstorm for
 authentication and authorization. One idea for how to do this is to
 listen on a websocket instead of a raw TCP port, and have users use
 [websocket-proxy][2] to connect. This scheme also translates decently
-to the non-sandstorm scheme.
+to the non-sandstorm case.
 
 On sandstorm, the plan is to have each IRC connection run in its own
 grain. The websocket trick means we don't need to allocate a separate
