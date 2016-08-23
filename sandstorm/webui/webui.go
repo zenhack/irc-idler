@@ -8,8 +8,9 @@ import (
 	"golang.org/x/net/xsrftoken"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"net/http"
-	"os"
+	"strconv"
 )
 
 const staticPath = "/opt/app/sandstorm/webui/"
@@ -19,6 +20,16 @@ var (
 
 	badXSRFToken = errors.New("Bad XSRF Token")
 )
+
+type ServerConfig struct {
+	Host string
+	Port uint16
+}
+
+type Backend struct {
+	IpNetworkCaps chan []byte
+	ServerConfigs chan ServerConfig
+}
 
 func genXSRFKey() (string, error) {
 	rawBytes := make([]byte, 128/8) // 128 bit key
@@ -41,7 +52,7 @@ func checkXSRF(key, userID, actionID string, req *http.Request) error {
 	return nil
 }
 
-func NewHandler() (http.Handler, error) {
+func NewHandler(backend *Backend) (http.Handler, error) {
 	serveMux := http.NewServeMux()
 	// TODO: might make sense to not generate this on every startup:
 	xsrfKey, err := genXSRFKey()
@@ -79,7 +90,21 @@ func NewHandler() (http.Handler, error) {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		w.Write([]byte("ok!"))
+		port, err := strconv.ParseUint(req.FormValue("port"), 10, 16)
+		if err != nil {
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		if port == 0 {
+			w.WriteHeader(400)
+			w.Write([]byte("Port must be non-zero"))
+			return
+		}
+		backend.ServerConfigs <- ServerConfig{
+			Host: req.FormValue("host"),
+			Port: uint16(port),
+		}
 	})
 
 	serveMux.HandleFunc("/ip-network-cap", func(w http.ResponseWriter, req *http.Request) {
@@ -88,7 +113,19 @@ func NewHandler() (http.Handler, error) {
 			w.Write([]byte("Method not allowed.\n"))
 			return
 		}
-		io.Copy(os.Stdout, req.Body)
+		// Size is mostly arbitrary. This is way bigger than we
+		// actually need, but it's still tiny and means we don't
+		// have to think to see that it's big enough:
+		limitedBody := io.LimitReader(req.Body, 512)
+
+		dec := base64.NewDecoder(base64.RawURLEncoding, limitedBody)
+		buf, err := ioutil.ReadAll(dec)
+		if err != nil {
+			println(err.Error())
+			w.WriteHeader(400)
+			return
+		}
+		backend.IpNetworkCaps <- buf
 	})
 	return serveMux, nil
 }

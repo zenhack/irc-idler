@@ -5,14 +5,17 @@ import (
 	"golang.org/x/net/context"
 	"log"
 	"os"
-	"time"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
 	"zenhack.net/go/sandstorm/grain"
 	"zenhack.net/go/sandstorm/websession"
 )
 
 func main() {
-	handler, err := webui.NewHandler()
+	backend := &webui.Backend{
+		IpNetworkCaps: make(chan []byte),
+		ServerConfigs: make(chan webui.ServerConfig),
+	}
+	handler, err := webui.NewHandler(backend)
 	ctx := context.Background()
 	api, err := grain.ConnectAPI(ctx, websession.FromHandler(ctx, handler))
 
@@ -25,10 +28,11 @@ func main() {
 	api.StayAwake(ctx, nil).Handle()
 	log.Println("Got the wake lock.")
 	for {
-		// If we don't do this we'll exit the process. We don't have anything
-		// else to do in main, but we need to stay running to keep our websesion
-		// available
-		time.Sleep(30 * time.Second)
-		fmt.Println("Still running")
+		select {
+		case ipNetworkCap := <-backend.IpNetworkCaps:
+			fmt.Println("got ipNetwork cap: ", ipNetworkCap)
+		case config := <-backend.ServerConfigs:
+			fmt.Println("got server config: ", config)
+		}
 	}
 }
