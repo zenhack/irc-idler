@@ -47,6 +47,13 @@ can build via:
 
     GOOS=linux GOARCH=amd64 go build
 
+The reasons for this are twofold:
+
+1. Cross compiling Go is really easy.
+2. The version of go available in the standard vagrant-spk vm is very
+   old (1.3.x), and I'd rather not be limited to what was available
+   then.
+
 # Using (non-sandstorm)
 
 As an example, to connect to Freenode via TLS:
