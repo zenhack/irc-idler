@@ -7,7 +7,7 @@ window.addEventListener("load", function(_event) {
 		var rpcId = Math.random();
 		window.parent.postMessage({powerboxRequest: {
 			rpcId: rpcId,
-			query: ["EAZQAQEAABEBF1EEAQH_QCAqemtXgqkAAAA"],
+			query: ["EAZQAQEAABEBF1EEAQH_QCAqemtXgqkAAAA"], // ID for ipNetwork
 		}}, "*");
 		window.addEventListener("message", function(event) {
 			if (event.data.rpcId !== rpcId) {
