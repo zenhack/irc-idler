@@ -25,14 +25,6 @@ window.addEventListener("load", function(_event) {
 			// Hack to pass bytes through unprocessed.
 			xhr.overrideMimeType("text/plain; charset=x-user-defined");
 
-			xhr.onreadystatechange = function(e) {
-				if(xhr.readyState !== XMLHttpRequest.DONE || xhr.status !== 200) {
-					return;
-				}
-
-				var capInput = document.getElementById("cap");
-				capInput.value = this.responseText;
-			};
 			xhr.send(event.data.token);
 		}, false);
 	});
