@@ -6,12 +6,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/schema"
 	"golang.org/x/net/xsrftoken"
 	"html/template"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 )
 
 const staticPath = "/opt/app/sandstorm/webui/"
@@ -19,7 +19,8 @@ const staticPath = "/opt/app/sandstorm/webui/"
 var (
 	indexTpl = template.Must(template.ParseFiles(staticPath + "templates/index.html"))
 
-	badXSRFToken = errors.New("Bad XSRF Token")
+	badXSRFToken      = errors.New("Bad XSRF Token")
+	illegalPortNumber = errors.New("Illegal Port Number (must be non-zero)")
 )
 
 type ServerConfig struct {
@@ -30,6 +31,22 @@ type ServerConfig struct {
 type Backend struct {
 	IpNetworkCaps chan []byte
 	ServerConfigs chan ServerConfig
+}
+
+type SettingsForm struct {
+	Host      string `schmea:"host"`
+	Port      uint16 `schema:"port"`
+	XSRFToken string `schema:"_xsrf_token"`
+}
+
+func (form *SettingsForm) Validate(xsrfKey string) error {
+	if !xsrftoken.Valid(form.XSRFToken, xsrfKey, "TODO", "/proxy-settings") {
+		return badXSRFToken
+	}
+	if form.Port == 0 {
+		return illegalPortNumber
+	}
+	return nil
 }
 
 func genXSRFKey() (string, error) {
@@ -45,14 +62,6 @@ func genXSRFKey() (string, error) {
 	return buf.String(), nil
 }
 
-func checkXSRF(key, userID, actionID string, req *http.Request) error {
-	token := req.FormValue("_xsrf_token")
-	if !xsrftoken.Valid(token, key, userID, actionID) {
-		return badXSRFToken
-	}
-	return nil
-}
-
 func NewHandler(backend *Backend) (http.Handler, error) {
 	r := mux.NewRouter()
 	// TODO: might make sense to not generate this on every startup:
@@ -66,7 +75,7 @@ func NewHandler(backend *Backend) (http.Handler, error) {
 			token := xsrftoken.Generate(
 				xsrfKey,
 				"TODO",
-				"/proxy-settings/",
+				"/proxy-settings",
 			)
 			tplCtx := struct{ XSRFToken string }{token}
 			indexTpl.Execute(w, &tplCtx)
@@ -76,25 +85,22 @@ func NewHandler(backend *Backend) (http.Handler, error) {
 
 	r.Methods("POST").Path("/proxy-settings").
 		HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if err := checkXSRF(xsrfKey, "TODO", "/proxy-settings/", req); err != nil {
-				w.WriteHeader(400)
-				w.Write([]byte(err.Error()))
-				return
+			form := &SettingsForm{}
+			err := req.ParseForm()
+			if err == nil {
+				err = schema.NewDecoder().Decode(form, req.PostForm)
 			}
-			port, err := strconv.ParseUint(req.FormValue("port"), 10, 16)
+			if err == nil {
+				err = form.Validate(xsrfKey)
+			}
 			if err != nil {
 				w.WriteHeader(400)
 				w.Write([]byte(err.Error()))
 				return
 			}
-			if port == 0 {
-				w.WriteHeader(400)
-				w.Write([]byte("Port must be non-zero"))
-				return
-			}
 			backend.ServerConfigs <- ServerConfig{
-				Host: req.FormValue("host"),
-				Port: uint16(port),
+				Host: form.Host,
+				Port: form.Port,
 			}
 		})
 
