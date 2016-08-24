@@ -3,6 +3,7 @@ go:
   - 1.6
   - 1.7
   - tip
+go_import_path: zenhack.net/go/irc-idler
 script: |
   for d in $(find * -name *_test.go |grep -v ^vendor/ | xargs dirname |uniq); do
     (cd $d; go test)
