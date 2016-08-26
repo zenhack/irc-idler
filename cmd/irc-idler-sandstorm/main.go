@@ -8,17 +8,21 @@ import (
 	"zenhack.net/go/irc-idler/sandstorm/webui"
 	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
 	"zenhack.net/go/sandstorm/grain"
-	"zenhack.net/go/sandstorm/websession"
+	"zombiezen.com/go/capnproto2"
 )
 
 func main() {
 	backend := &webui.Backend{
-		IpNetworkCaps: make(chan []byte),
+		IpNetworkCaps: make(chan capnp.Pointer),
 		ServerConfigs: make(chan webui.ServerConfig),
 	}
-	handler, err := webui.NewHandler(backend)
 	ctx := context.Background()
-	api, err := grain.ConnectAPI(ctx, websession.FromHandler(ctx, handler))
+	uiView := &webui.UiView{
+		Ctx:     ctx,
+		Backend: backend,
+	}
+
+	api, err := grain.ConnectAPI(ctx, uiView)
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: ", err)
@@ -32,10 +36,10 @@ func main() {
 		select {
 		case ipNetworkCap := <-backend.IpNetworkCaps:
 			fmt.Println("got ipNetwork cap: ", ipNetworkCap)
-			_, err := api.Restore(
+			_, err := api.Save(
 				ctx,
-				func(args grain_capnp.SandstormApi_restore_Params) error {
-					args.SetToken(ipNetworkCap)
+				func(p grain_capnp.SandstormApi_save_Params) error {
+					p.SetCap(ipNetworkCap)
 					return nil
 				},
 			).Struct()

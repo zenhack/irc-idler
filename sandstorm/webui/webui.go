@@ -7,11 +7,16 @@ import (
 	"errors"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/schema"
+	"golang.org/x/net/context"
 	"golang.org/x/net/xsrftoken"
 	"html/template"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"zenhack.net/go/sandstorm/capnp/grain"
+	ws_capnp "zenhack.net/go/sandstorm/capnp/websession"
+	"zenhack.net/go/sandstorm/websession"
+	"zombiezen.com/go/capnproto2"
 )
 
 const staticPath = "/opt/app/sandstorm/webui/"
@@ -29,7 +34,7 @@ type ServerConfig struct {
 }
 
 type Backend struct {
-	IpNetworkCaps chan []byte
+	IpNetworkCaps chan capnp.Pointer
 	ServerConfigs chan ServerConfig
 }
 
@@ -37,6 +42,11 @@ type SettingsForm struct {
 	Host      string `schmea:"host"`
 	Port      uint16 `schema:"port"`
 	XSRFToken string `schema:"_xsrf_token"`
+}
+
+type UiView struct {
+	Backend *Backend
+	Ctx     context.Context
 }
 
 func (form *SettingsForm) Validate(xsrfKey string) error {
@@ -62,12 +72,15 @@ func genXSRFKey() (string, error) {
 	return buf.String(), nil
 }
 
-func NewHandler(backend *Backend) (http.Handler, error) {
+func (v *UiView) NewSession(args grain.UiView_newSession) error {
+
+	sessionCtx := args.Params.Context()
+
 	r := mux.NewRouter()
 	// TODO: might make sense to not generate this on every startup:
 	xsrfKey, err := genXSRFKey()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	r.Methods("GET").Path("/").
@@ -98,7 +111,7 @@ func NewHandler(backend *Backend) (http.Handler, error) {
 				w.Write([]byte(err.Error()))
 				return
 			}
-			backend.ServerConfigs <- ServerConfig{
+			v.Backend.ServerConfigs <- ServerConfig{
 				Host: form.Host,
 				Port: form.Port,
 			}
@@ -110,15 +123,45 @@ func NewHandler(backend *Backend) (http.Handler, error) {
 			// actually need, but it's still tiny and means we don't
 			// have to think to see that it's big enough:
 			limitedBody := io.LimitReader(req.Body, 512)
-
-			dec := base64.NewDecoder(base64.RawURLEncoding, limitedBody)
-			buf, err := ioutil.ReadAll(dec)
+			buf, err := ioutil.ReadAll(limitedBody)
 			if err != nil {
 				println(err.Error())
 				w.WriteHeader(400)
 				return
 			}
-			backend.IpNetworkCaps <- buf
+			results, err := sessionCtx.ClaimRequest(
+				v.Ctx,
+				func(params grain.SessionContext_claimRequest_Params) error {
+					params.SetRequestToken(string(buf))
+					return nil
+				}).Struct()
+			if err != nil {
+				println(err.Error())
+				w.WriteHeader(400)
+				return
+			}
+			capability, err := results.Cap()
+			if err != nil {
+				println(err.Error())
+				w.WriteHeader(400)
+				return
+			}
+			v.Backend.IpNetworkCaps <- capability
+			return
 		})
-	return r, nil
+	session := ws_capnp.WebSession_ServerToClient(websession.FromHandler(v.Ctx, r))
+	args.Results.SetSession(grain.UiSession{Client: session.Client})
+	return nil
+}
+
+func (h UiView) GetViewInfo(p grain.UiView_getViewInfo) error {
+	return nil
+}
+
+func (h UiView) NewRequestSession(p grain.UiView_newRequestSession) error {
+	return nil
+}
+
+func (h UiView) NewOfferSession(p grain.UiView_newOfferSession) error {
+	return nil
 }
