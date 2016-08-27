@@ -231,7 +231,7 @@ const pkgdef :Spk.PackageDefinition = (
 
 const myCommand :Spk.Manifest.Command = (
   # Here we define the command used to start up your server.
-  argv = ["/opt/app/cmd/irc-idler-sandstorm/irc-idler-sandstorm"],
+  argv = ["/opt/app/cmd/sandstorm-irc-idler/sandstorm-irc-idler"],
   environ = [
     # Note that this defines the *entire* environment seen by your app.
     (key = "PATH", value = "/usr/local/bin:/usr/bin:/bin"),
