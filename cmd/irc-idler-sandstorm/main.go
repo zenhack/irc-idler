@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"golang.org/x/net/context"
 	"log"
+	"net"
 	"os"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
 	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
+	ip_capnp "zenhack.net/go/sandstorm/capnp/ip"
 	"zenhack.net/go/sandstorm/grain"
+	"zenhack.net/go/sandstorm/ip"
 	"zombiezen.com/go/capnproto2"
 )
 
@@ -16,6 +19,7 @@ func main() {
 		IpNetworkCaps: make(chan capnp.Pointer),
 		ServerConfigs: make(chan webui.ServerConfig),
 	}
+	serverConfig := webui.ServerConfig{}
 	ctx := context.Background()
 	uiView := &webui.UiView{
 		Ctx:     ctx,
@@ -36,6 +40,8 @@ func main() {
 		select {
 		case ipNetworkCap := <-backend.IpNetworkCaps:
 			fmt.Println("got ipNetwork cap: ", ipNetworkCap)
+
+			// TODO: actually put the resulting token somewhere for future use.
 			_, err := api.Save(
 				ctx,
 				func(p grain_capnp.SandstormApi_save_Params) error {
@@ -43,11 +49,21 @@ func main() {
 					return nil
 				},
 			).Struct()
+
+			ipNetwork := ip_capnp.IpNetwork{capnp.ToInterface(ipNetworkCap).Client()}
+			dialer := ip.IpNetworkDialer{ctx, ipNetwork}
+			conn, err := dialer.Dial("tcp", net.JoinHostPort(
+				serverConfig.Host,
+				fmt.Sprintf("%d", serverConfig.Port),
+			))
 			if err != nil {
-				log.Println("Error restoring capability: ", err)
+				fmt.Println(err)
+				continue
 			}
-		case config := <-backend.ServerConfigs:
-			fmt.Println("got server config: ", config)
+			conn.Write([]byte("Hello\n"))
+			conn.Close()
+		case serverConfig = <-backend.ServerConfigs:
+			fmt.Println("got server config: ", serverConfig)
 		}
 	}
 }
