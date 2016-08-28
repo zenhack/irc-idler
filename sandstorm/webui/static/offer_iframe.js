@@ -16,7 +16,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
 		renderTemplate: {
 			rpcId: "0",
 			template: window.location.protocol.replace("http", "ws") +
-					"//$API_HOST/.sandstorm-api-token/$API_TOKEN/connect"
+					"//$API_HOST/.sandstorm-token/$API_TOKEN/connect"
 		}
 	}, "*");
 
