@@ -4,6 +4,7 @@
 	<head>
 		<title>IRC Idler - Settings</title>
 		<script src="/static/get_ip_network.js"></script>
+		<script src="/static/offer_iframe.js"></script>
 	</head>
 	<body>
 		<form action="/proxy-settings" method="post">
@@ -21,5 +22,8 @@
 			</div>
 		</form>
 		<button id="request_cap">Request Network Access</button>
+		<p>You can connect to irc-idler via this websocket:</p>
+		<iframe id="offer-iframe"
+			style="width: 100%; height: 55px; margin: 0; border: 0;"></iframe>
 	</body>
 </html>

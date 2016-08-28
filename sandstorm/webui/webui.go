@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/schema"
 	"golang.org/x/net/context"
+	"golang.org/x/net/websocket"
 	"golang.org/x/net/xsrftoken"
 	"html/template"
 	"io"
@@ -149,6 +150,12 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 			v.Backend.IpNetworkCaps <- capability
 			return
 		})
+
+	r.Methods("GET").Path("/connect").Headers("Upgrade", "websocket").
+		Handler(websocket.Handler(func(conn *websocket.Conn) {
+			conn.Write([]byte("Hello!\n"))
+		}))
+
 	session := ws_capnp.WebSession_ServerToClient(websession.FromHandler(v.Ctx, r))
 	args.Results.SetSession(grain.UiSession{Client: session.Client})
 	return nil
