@@ -36,8 +36,9 @@ port to each network.
 
 # Building
 
-The sandstorm version is in <cmd/irc-idler-sandstorm>, the non-sandstorm
-version is in <cmd/irc-idler>. Either executable can be built via standard go
+The sandstorm version is in `cmd/irc-idler-sandstorm`, the non-sandstorm
+version is in `cmd/irc-idler`. Either executable can be built via
+standard go
 build.
 
 Note on the sandstorm build: The vagrant-spk boilerplate doesn't
