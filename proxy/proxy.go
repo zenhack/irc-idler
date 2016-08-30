@@ -322,17 +322,15 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 }
 
 func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
-	if ok {
-		p.logger.Debugf("handleClientEvent(): Recieved message: %q\n", msg)
-		if err := msg.Validate(); err != nil {
-			p.sendClient((*irc.Message)(err))
-			p.dropClient()
-		}
-	}
-
-	if !ok || msg.Command == "QUIT" {
+	if !ok {
+		p.logger.Debugln("Client disconnected")
 		p.dropClient()
 		return
+	}
+	p.logger.Debugf("handleClientEvent(): Recieved message: %q\n", msg)
+	if err := msg.Validate(); err != nil {
+		p.sendClient((*irc.Message)(err))
+		p.dropClient()
 	}
 
 	if p.client.inHandshake() {
@@ -341,6 +339,9 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	}
 
 	switch msg.Command {
+	case "QUIT":
+		p.logger.Debugln("Client sent quit; disconnecting.")
+		p.dropClient()
 	case "JOIN":
 		if p.server.session.channels[msg.Params[0]] {
 			msg.Prefix = p.client.session.ClientID.String()
