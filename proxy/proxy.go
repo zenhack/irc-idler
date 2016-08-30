@@ -56,6 +56,9 @@ type Proxy struct {
 	}
 
 	logger *log.Logger // Informational logging (nothing to do with messagelog).
+
+	// send indicates the server should shut down.
+	stop chan struct{}
 }
 
 type connection struct {
@@ -126,11 +129,16 @@ func NewProxy(clientConns <-chan irc.ReadWriteCloser, serverConnector Connector,
 		server:          &connection{},
 		logger:          logger,
 		messagelogs:     ephemeral.NewStore(),
+		stop:            make(chan struct{}),
 	}
 }
 
 func (p *Proxy) Run() {
 	p.serve()
+}
+
+func (p *Proxy) Stop() {
+	p.stop <- struct{}{}
 }
 
 func (c *connection) setup(conn irc.ReadWriteCloser) {
@@ -175,9 +183,14 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 }
 
 func (p *Proxy) serve() {
+	p.logger.Infoln("Proxy starting up")
 	for {
 		p.logger.Debugln("serve(): Top of loop")
 		select {
+		case <-p.stop:
+			p.logger.Infoln("Proxy shutting down")
+			p.reset()
+			return
 		case msg, ok := <-p.client.Chan:
 			p.logger.Debugln("serve(): Got client event")
 			p.handleClientEvent(msg, ok)
