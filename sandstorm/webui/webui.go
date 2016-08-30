@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/schema"
 	"golang.org/x/net/context"
@@ -13,6 +14,7 @@ import (
 	"html/template"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"zenhack.net/go/sandstorm/capnp/grain"
 	ws_capnp "zenhack.net/go/sandstorm/capnp/websession"
@@ -34,9 +36,14 @@ type ServerConfig struct {
 	Port uint16
 }
 
+func (s *ServerConfig) String() string {
+	return net.JoinHostPort(s.Host, fmt.Sprint(s.Port))
+}
+
 type Backend struct {
 	IpNetworkCaps chan capnp.Pointer
 	ServerConfigs chan ServerConfig
+	ClientConns   chan io.ReadWriteCloser
 }
 
 type SettingsForm struct {
@@ -153,7 +160,7 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 
 	r.Methods("GET").Path("/connect").Headers("Upgrade", "websocket").
 		Handler(websocket.Handler(func(conn *websocket.Conn) {
-			conn.Write([]byte("Hello!\n"))
+			v.Backend.ClientConns <- conn
 		}))
 
 	session := ws_capnp.WebSession_ServerToClient(websession.FromHandler(v.Ctx, r))

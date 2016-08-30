@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
+	"io"
 	"log"
-	"net"
 	"os"
+	"zenhack.net/go/irc-idler/irc"
+	"zenhack.net/go/irc-idler/proxy"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
 	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
 	ip_capnp "zenhack.net/go/sandstorm/capnp/ip"
@@ -15,11 +18,19 @@ import (
 )
 
 func main() {
+	logger := logrus.New()
+	logger.Level = logrus.DebugLevel
+
 	backend := &webui.Backend{
 		IpNetworkCaps: make(chan capnp.Pointer),
 		ServerConfigs: make(chan webui.ServerConfig),
+		ClientConns:   make(chan io.ReadWriteCloser),
 	}
-	serverConfig := webui.ServerConfig{}
+	var (
+		serverConfig      webui.ServerConfig
+		daemon            *proxy.Proxy
+		daemonClientConns chan irc.ReadWriteCloser
+	)
 	ctx := context.Background()
 	uiView := &webui.UiView{
 		Ctx:     ctx,
@@ -42,7 +53,7 @@ func main() {
 			fmt.Println("got ipNetwork cap: ", ipNetworkCap)
 
 			// TODO: actually put the resulting token somewhere for future use.
-			_, err := api.Save(
+			api.Save(
 				ctx,
 				func(p grain_capnp.SandstormApi_save_Params) error {
 					p.SetCap(ipNetworkCap)
@@ -51,19 +62,36 @@ func main() {
 			).Struct()
 
 			ipNetwork := ip_capnp.IpNetwork{capnp.ToInterface(ipNetworkCap).Client()}
-			dialer := ip.IpNetworkDialer{ctx, ipNetwork}
-			conn, err := dialer.Dial("tcp", net.JoinHostPort(
-				serverConfig.Host,
-				fmt.Sprintf("%d", serverConfig.Port),
-			))
-			if err != nil {
-				fmt.Println(err)
-				continue
+
+			if daemon != nil {
+				logger.Debugln("Stopping daemon")
+				daemon.Stop()
+				daemon = nil
 			}
-			conn.Write([]byte("Hello\n"))
-			conn.Close()
+			daemonClientConns = make(chan irc.ReadWriteCloser)
+			daemon = proxy.NewProxy(
+				daemonClientConns,
+				&proxy.DialerConnector{
+					Dialer:  &ip.IpNetworkDialer{ctx, ipNetwork},
+					Network: "tcp",
+					Addr:    serverConfig.String(),
+				},
+				logger,
+			)
+			go daemon.Run()
 		case serverConfig = <-backend.ServerConfigs:
 			fmt.Println("got server config: ", serverConfig)
+		case conn := <-backend.ClientConns:
+			if daemon == nil {
+				// The daemon isn't running, probably because we don't have
+				// a network capability; we can't connect to the  server.
+				// TODO: give the client some useful error message.
+				logger.Debugln("Got client connection, but daemon isn't running")
+				conn.Close()
+			} else {
+				logger.Debugln("Sending client connection to daemon.")
+				daemonClientConns <- irc.NewReadWriteCloser(conn)
+			}
 		}
 	}
 }
