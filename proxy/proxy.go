@@ -374,6 +374,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	} else {
 		// Server disconnect. We boot the client and start all over.
 		// TODO: might be nice to attempt a reconnect with cached credentials.
+		p.logger.Errorf("Server disconnected")
 		p.reset()
 		return
 	}
