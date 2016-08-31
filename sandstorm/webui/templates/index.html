@@ -10,11 +10,13 @@
 		<form action="/proxy-settings" method="post">
 			<div>
 				<label for="host">Host:</label>
-				<input type="text" id="host" name="host" />
+				<input type="text" id="host" name="host" value="{{ .Host }}" />
 			</div>
 			<div>
 				<label for="port">Port:</label>
-				<input type="text" id="port" name="port" />
+				<input type="text" id="port" name="port" {{ if ne .Port 0 -}}
+					value="{{ .Port }}"
+				{{- end }} />
 			</div>
 			<div>
 				<button type="submit">Apply</button>

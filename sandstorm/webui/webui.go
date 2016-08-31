@@ -84,6 +84,7 @@ func genXSRFKey() (string, error) {
 func (v *UiView) NewSession(args grain.UiView_newSession) error {
 
 	sessionCtx := args.Params.Context()
+	serverConfig := ServerConfig{}
 
 	r := mux.NewRouter()
 	// TODO: might make sense to not generate this on every startup:
@@ -99,8 +100,11 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				"TODO",
 				"/proxy-settings",
 			)
-			tplCtx := struct{ XSRFToken string }{token}
-			indexTpl.Execute(w, &tplCtx)
+			indexTpl.Execute(w, &SettingsForm{
+				Host:      serverConfig.Host,
+				Port:      serverConfig.Port,
+				XSRFToken: token,
+			})
 		})
 
 	r.Methods("GET").PathPrefix("/static/").Handler(http.FileServer(http.Dir(staticPath)))
@@ -120,10 +124,11 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				w.Write([]byte(err.Error()))
 				return
 			}
-			v.Backend.ServerConfigs <- ServerConfig{
+			serverConfig = ServerConfig{
 				Host: form.Host,
 				Port: form.Port,
 			}
+			v.Backend.ServerConfigs <- serverConfig
 			http.Redirect(w, req, "/", http.StatusSeeOther)
 		})
 
