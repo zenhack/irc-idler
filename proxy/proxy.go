@@ -207,12 +207,15 @@ func (p *Proxy) serve() {
 			// If we're not done with the handshake, restart the server connection too.
 			if p.server.inHandshake() {
 				p.server.shutdown()
+				p.logger.Debugln("Connecting to server...")
 				serverConn, err := p.serverConnector.Connect()
 				if err != nil {
+					p.logger.Debugln("Server connection failed.")
 					// Server connection failed. Boot the client and let
 					// them deal with it:
 					p.client.shutdown()
 				} else {
+					p.logger.Debugln("Established connection to server")
 					p.server.setup(serverConn)
 				}
 			}
