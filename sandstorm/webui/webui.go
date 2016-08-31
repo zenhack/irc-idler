@@ -124,6 +124,7 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				Host: form.Host,
 				Port: form.Port,
 			}
+			http.Redirect(w, req, "/", http.StatusSeeOther)
 		})
 
 	r.Methods("POST").Path("/ip-network-cap").
