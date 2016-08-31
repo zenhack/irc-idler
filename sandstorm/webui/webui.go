@@ -16,6 +16,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"time"
 	"zenhack.net/go/sandstorm/capnp/grain"
 	ws_capnp "zenhack.net/go/sandstorm/capnp/websession"
 	"zenhack.net/go/sandstorm/websession"
@@ -161,6 +162,14 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 	r.Methods("GET").Path("/connect").Headers("Upgrade", "websocket").
 		Handler(websocket.Handler(func(conn *websocket.Conn) {
 			v.Backend.ClientConns <- conn
+			for {
+				// XXX There's a bug in my websession pacakge that causes the
+				// connection to be dropped if this function returns. We're
+				// leaking goroutines on every connection now, but this at
+				// least "works." Fixing the bug and getting rid of this
+				// resource leak is high on my list of priorities.
+				time.Sleep(time.Second)
+			}
 		}))
 
 	session := ws_capnp.WebSession_ServerToClient(websession.FromHandler(v.Ctx, r))
