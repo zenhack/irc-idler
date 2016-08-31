@@ -48,7 +48,7 @@ type Backend struct {
 }
 
 type SettingsForm struct {
-	Host      string `schmea:"host"`
+	Host      string `schema:"host"`
 	Port      uint16 `schema:"port"`
 	XSRFToken string `schema:"_xsrf_token"`
 }
