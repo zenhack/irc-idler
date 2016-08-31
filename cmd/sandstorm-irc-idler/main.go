@@ -22,14 +22,17 @@ func main() {
 	logger.Level = logrus.DebugLevel
 
 	backend := &webui.Backend{
-		IpNetworkCaps: make(chan capnp.Pointer),
-		ServerConfigs: make(chan webui.ServerConfig),
-		ClientConns:   make(chan io.ReadWriteCloser),
+		IpNetworkCaps:   make(chan capnp.Pointer),
+		GetServerConfig: make(chan webui.ServerConfig),
+		SetServerConfig: make(chan webui.ServerConfig),
+		HaveNetwork:     make(chan bool),
+		ClientConns:     make(chan io.ReadWriteCloser),
 	}
 	var (
 		serverConfig      webui.ServerConfig
 		daemon            *proxy.Proxy
 		daemonClientConns chan irc.ReadWriteCloser
+		ipNetwork         *ip_capnp.IpNetwork
 	)
 	ctx := context.Background()
 	uiView := &webui.UiView{
@@ -47,6 +50,26 @@ func main() {
 	log.Println("Going to try to stay awake...")
 	api.StayAwake(ctx, nil).Handle()
 	log.Println("Got the wake lock.")
+
+	// Stop the running proxy daemon (if any) and start a new one.
+	newDaemon := func() {
+		if daemon != nil {
+			logger.Debugln("Stopping daemon")
+			daemon.Stop()
+			daemon = nil
+		}
+		daemonClientConns = make(chan irc.ReadWriteCloser)
+		daemon = proxy.NewProxy(
+			daemonClientConns,
+			&proxy.DialerConnector{
+				Dialer:  &ip.IpNetworkDialer{ctx, *ipNetwork},
+				Network: "tcp",
+				Addr:    serverConfig.String(),
+			},
+			logger,
+		)
+		go daemon.Run()
+	}
 	for {
 		select {
 		case ipNetworkCap := <-backend.IpNetworkCaps:
@@ -61,26 +84,16 @@ func main() {
 				},
 			).Struct()
 
-			ipNetwork := ip_capnp.IpNetwork{capnp.ToInterface(ipNetworkCap).Client()}
+			ipNetwork = &ip_capnp.IpNetwork{capnp.ToInterface(ipNetworkCap).Client()}
 
-			if daemon != nil {
-				logger.Debugln("Stopping daemon")
-				daemon.Stop()
-				daemon = nil
+			if serverConfig.Port != 0 {
+				newDaemon()
 			}
-			daemonClientConns = make(chan irc.ReadWriteCloser)
-			daemon = proxy.NewProxy(
-				daemonClientConns,
-				&proxy.DialerConnector{
-					Dialer:  &ip.IpNetworkDialer{ctx, ipNetwork},
-					Network: "tcp",
-					Addr:    serverConfig.String(),
-				},
-				logger,
-			)
-			go daemon.Run()
-		case serverConfig = <-backend.ServerConfigs:
+		case serverConfig = <-backend.SetServerConfig:
 			fmt.Println("got server config: ", serverConfig)
+			if ipNetwork != nil {
+				newDaemon()
+			}
 		case conn := <-backend.ClientConns:
 			if daemon == nil {
 				// The daemon isn't running, probably because we don't have
@@ -92,6 +105,8 @@ func main() {
 				logger.Debugln("Sending client connection to daemon.")
 				daemonClientConns <- irc.NewReadWriteCloser(conn)
 			}
+		case backend.GetServerConfig <- serverConfig:
+		case backend.HaveNetwork <- ipNetwork != nil:
 		}
 	}
 }

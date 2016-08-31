@@ -42,15 +42,21 @@ func (s *ServerConfig) String() string {
 }
 
 type Backend struct {
-	IpNetworkCaps chan capnp.Pointer
-	ServerConfigs chan ServerConfig
-	ClientConns   chan io.ReadWriteCloser
+	IpNetworkCaps                    chan capnp.Pointer
+	GetServerConfig, SetServerConfig chan ServerConfig
+	ClientConns                      chan io.ReadWriteCloser
+	HaveNetwork                      chan bool
 }
 
 type SettingsForm struct {
 	Host      string `schema:"host"`
 	Port      uint16 `schema:"port"`
 	XSRFToken string `schema:"_xsrf_token"`
+}
+
+type templateContext struct {
+	Form        *SettingsForm
+	HaveNetwork bool
 }
 
 type UiView struct {
@@ -84,7 +90,6 @@ func genXSRFKey() (string, error) {
 func (v *UiView) NewSession(args grain.UiView_newSession) error {
 
 	sessionCtx := args.Params.Context()
-	serverConfig := ServerConfig{}
 
 	r := mux.NewRouter()
 	// TODO: might make sense to not generate this on every startup:
@@ -100,10 +105,14 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				"TODO",
 				"/proxy-settings",
 			)
-			indexTpl.Execute(w, &SettingsForm{
-				Host:      serverConfig.Host,
-				Port:      serverConfig.Port,
-				XSRFToken: token,
+			serverConfig := <-v.Backend.GetServerConfig
+			indexTpl.Execute(w, &templateContext{
+				HaveNetwork: <-v.Backend.HaveNetwork,
+				Form: &SettingsForm{
+					Host:      serverConfig.Host,
+					Port:      serverConfig.Port,
+					XSRFToken: token,
+				},
 			})
 		})
 
@@ -124,11 +133,10 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				w.Write([]byte(err.Error()))
 				return
 			}
-			serverConfig = ServerConfig{
+			v.Backend.SetServerConfig <- ServerConfig{
 				Host: form.Host,
 				Port: form.Port,
 			}
-			v.Backend.ServerConfigs <- serverConfig
 			http.Redirect(w, req, "/", http.StatusSeeOther)
 		})
 

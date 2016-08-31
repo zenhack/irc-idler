@@ -3,29 +3,36 @@
 	<!-- TODO: TLS checkbox, maybe make this less bare-bones. -->
 	<head>
 		<title>IRC Idler - Settings</title>
-		<script src="/static/get_ip_network.js"></script>
+		{{ if .HaveNetwork -}}
 		<script src="/static/offer_iframe.js"></script>
+		{{ else -}}
+		<script src="/static/get_ip_network.js"></script>
+		{{- end }}
 	</head>
 	<body>
 		<form action="/proxy-settings" method="post">
 			<div>
 				<label for="host">Host:</label>
-				<input type="text" id="host" name="host" value="{{ .Host }}" />
+				<input type="text" id="host" name="host" value="{{ .Form.Host }}" />
 			</div>
 			<div>
 				<label for="port">Port:</label>
-				<input type="text" id="port" name="port" {{ if ne .Port 0 -}}
-					value="{{ .Port }}"
+				<input type="text" id="port" name="port" {{ if ne .Form.Port 0 -}}
+					value="{{ .Form.Port }}"
 				{{- end }} />
 			</div>
 			<div>
 				<button type="submit">Apply</button>
-				<input type="hidden" name="_xsrf_token" value="{{ .XSRFToken }}" />
+				<input type="hidden" name="_xsrf_token" value="{{ .Form.XSRFToken }}" />
 			</div>
 		</form>
-		<button id="request_cap">Request Network Access</button>
-		<p>You can connect to irc-idler via this websocket:</p>
+		{{- if .HaveNetwork }}
+		<p>You can connect to IRC-Idler via this websocket:</p>
 		<iframe id="offer-iframe"
 			style="width: 100%; height: 55px; margin: 0; border: 0;"></iframe>
+		{{ else -}}
+		<p>IRC-Idler does not have network access.</p>
+		<button id="request_cap">Request Network Access</button>
+		{{ end -}}
 	</body>
 </html>
