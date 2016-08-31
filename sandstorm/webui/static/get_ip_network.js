@@ -20,6 +20,13 @@ window.addEventListener("load", function(_event) {
 			}
 
 			var xhr = new XMLHttpRequest();
+
+			xhr.onreadystatechange = function(event) {
+				if(xhr.readyState === XMLHttpRequest.DONE) {
+					window.location.reload(true);
+				}
+			};
+
 			xhr.open("POST", "/ip-network-cap", true);
 
 			// Hack to pass bytes through unprocessed.
