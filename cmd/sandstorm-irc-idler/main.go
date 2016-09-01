@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 	"io"
@@ -17,7 +18,31 @@ import (
 
 const (
 	ipNetworkCapFile = "/var/ipNetworkCap"
+	serverConfigFile = "/var/server-config.json"
 )
+
+func saveServerConfig(cfg webui.ServerConfig) error {
+	buf, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(serverConfigFile, buf, 0600)
+}
+
+func loadServerConfig() (webui.ServerConfig, error) {
+	ret := webui.ServerConfig{}
+	buf, err := ioutil.ReadFile(serverConfigFile)
+	if err != nil {
+		return ret, err
+	}
+	err = json.Unmarshal(buf, &ret)
+	if err != nil {
+		// Make sure we return the zero value on failure:
+		return webui.ServerConfig{}, err
+	} else {
+		return ret, nil
+	}
+}
 
 func saveIpNetwork(ctx context.Context, api grain_capnp.SandstormApi, ipNetworkCap capnp.Pointer) error {
 	results, err := api.Save(
@@ -93,6 +118,11 @@ func main() {
 		logger.Infoln("Failed to load ipNetwork capability:", err)
 	}
 
+	serverConfig, err = loadServerConfig()
+	if err != nil {
+		logger.Infoln("Failed to load server config:", err)
+	}
+
 	// Stop the running proxy daemon (if any) and start a new one.
 	newDaemon := func() {
 		if daemon != nil {
@@ -128,6 +158,10 @@ func main() {
 			}
 		case serverConfig = <-backend.SetServerConfig:
 			logger.Debugln("got server config: ", serverConfig)
+			err = saveServerConfig(serverConfig)
+			if err != nil {
+				logger.Warnln("Failed to save server config:", err)
+			}
 			if ipNetwork != nil {
 				newDaemon()
 			}
