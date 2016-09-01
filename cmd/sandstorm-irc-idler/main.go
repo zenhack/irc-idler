@@ -4,6 +4,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 	"io"
+	"io/ioutil"
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/proxy"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
@@ -13,6 +14,45 @@ import (
 	"zenhack.net/go/sandstorm/ip"
 	"zombiezen.com/go/capnproto2"
 )
+
+const (
+	ipNetworkCapFile = "/var/ipNetworkCap"
+)
+
+func saveIpNetwork(ctx context.Context, api grain_capnp.SandstormApi, ipNetworkCap capnp.Pointer) error {
+	results, err := api.Save(
+		ctx,
+		func(p grain_capnp.SandstormApi_save_Params) error {
+			p.SetCap(ipNetworkCap)
+			// TODO: set Label
+			return nil
+		},
+	).Struct()
+	if err != nil {
+		return err
+	}
+	token, err := results.Token()
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(ipNetworkCapFile, token, 0600)
+}
+
+func loadIpNetwork(ctx context.Context, api grain_capnp.SandstormApi) (*ip_capnp.IpNetwork, error) {
+	token, err := ioutil.ReadFile(ipNetworkCapFile)
+	if err != nil {
+		return nil, err
+	}
+	capability, err := api.Restore(ctx,
+		func(p grain_capnp.SandstormApi_restore_Params) error {
+			p.SetToken(token)
+			return nil
+		}).Cap().Struct()
+	if err != nil {
+		return nil, err
+	}
+	return &ip_capnp.IpNetwork{capnp.ToInterface(capability).Client()}, nil
+}
 
 func main() {
 	logger := logrus.New()
@@ -30,6 +70,7 @@ func main() {
 		daemon            *proxy.Proxy
 		daemonClientConns chan irc.ReadWriteCloser
 		ipNetwork         *ip_capnp.IpNetwork
+		err               error
 	)
 	ctx := context.Background()
 	uiView := &webui.UiView{
@@ -46,6 +87,11 @@ func main() {
 	logger.Debugln("Going to try to stay awake...")
 	api.StayAwake(ctx, nil).Handle()
 	logger.Debugln("Got the wake lock.")
+
+	ipNetwork, err = loadIpNetwork(ctx, api)
+	if err != nil {
+		logger.Infoln("Failed to load ipNetwork capability:", err)
+	}
 
 	// Stop the running proxy daemon (if any) and start a new one.
 	newDaemon := func() {
@@ -71,14 +117,9 @@ func main() {
 		case ipNetworkCap := <-backend.IpNetworkCaps:
 			logger.Debugln("got ipNetwork cap: ", ipNetworkCap)
 
-			// TODO: actually put the resulting token somewhere for future use.
-			api.Save(
-				ctx,
-				func(p grain_capnp.SandstormApi_save_Params) error {
-					p.SetCap(ipNetworkCap)
-					return nil
-				},
-			).Struct()
+			if err := saveIpNetwork(ctx, api, ipNetworkCap); err != nil {
+				logger.Warnln("Failed to save ipNetwork capability:", err)
+			}
 
 			ipNetwork = &ip_capnp.IpNetwork{capnp.ToInterface(ipNetworkCap).Client()}
 
