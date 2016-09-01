@@ -142,6 +142,10 @@ func main() {
 		)
 		go daemon.Run()
 	}
+
+	if serverConfig.Port != 0 && ipNetwork != nil {
+		newDaemon()
+	}
 	for {
 		select {
 		case ipNetworkCap := <-backend.IpNetworkCaps:
