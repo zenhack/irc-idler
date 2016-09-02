@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	log "github.com/Sirupsen/logrus"
 	"io"
 	"io/ioutil"
@@ -12,6 +13,10 @@ import (
 	"zenhack.net/go/irc-idler/storage/ephemeral"
 
 	"golang.org/x/net/proxy"
+)
+
+var (
+	errConnectionClosed = errors.New("Connection Closed")
 )
 
 type Connector interface {
@@ -163,6 +168,9 @@ func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *l
 // Send a message to the server. On failure, call p.reset()
 func (p *Proxy) sendServer(msg *irc.Message) error {
 	p.logger.Debugf("sendServer(): sending message: %q\n", msg)
+	if p.server.ReadWriteCloser == nil {
+		return errConnectionClosed
+	}
 	err := p.server.WriteMessage(msg)
 	if err != nil {
 		p.logger.Errorf("sendServer(): error: %v.\n", err)
@@ -174,6 +182,9 @@ func (p *Proxy) sendServer(msg *irc.Message) error {
 // Send a message to the client. On failure, call p.dropClient()
 func (p *Proxy) sendClient(msg *irc.Message) error {
 	p.logger.Debugf("sendClient(): sending message: %q\n", msg)
+	if p.client.ReadWriteCloser == nil {
+		return errConnectionClosed
+	}
 	err := p.client.WriteMessage(msg)
 	if err != nil {
 		p.logger.Errorf("sendClient(): error: %v.\n", err)
