@@ -508,7 +508,7 @@ func (p *Proxy) replayLog(channelName string) {
 	p.logger.Debugf("replayLog(%q)\n", channelName)
 	chLog, err := p.messagelogs.GetChannel(channelName)
 	if err != nil {
-		p.logger.Debugln("messagelogs.GetChannle(): %v", err)
+		p.logger.Debugln("messagelogs.GetChannel(): %v", err)
 		return
 	}
 
