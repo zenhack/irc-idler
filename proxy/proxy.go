@@ -72,18 +72,53 @@ type connection struct {
 	session
 }
 
+// State of the initial handshake; this is complete when all three
+// variables are true.
+type handshakeState struct {
+	haveNick, haveUser bool // The client has sent the NICK/USER mesage.
+
+	// The client has received the full MOTD; this is the last thing the
+	// server sends as part of the initial welcome sequence.
+	haveMOTD bool
+}
+
+// Return true if the handshake is complete, false otherwise.
+func (h handshakeState) Done() bool {
+	return h.haveNick && h.haveUser && h.haveMOTD
+}
+
+// Update the state to be consistent with `msg` having just been transferred.
+// Note that we don't have to specify whether this is the state for the
+// client or server, or whether the message was sent or received, because
+// the way the handshake works, these things are unambiguous from the message
+// itself.
+//
+// Note that it is *not* safe to call this regardless of whether the handshake
+// is already complete.
+func (h *handshakeState) Update(msg *irc.Message) {
+	switch msg.Command {
+	case "USER":
+		h.haveUser = true
+	case "NICK":
+		h.haveNick = true
+	case irc.ERR_NONICKNAMEGIVEN, irc.ERR_ERRONEUSNICKNAME, irc.ERR_NICKNAMEINUSE,
+		irc.ERR_NICKCOLLISION:
+		// Server rejected our NICK message, we'll need to send another before
+		// we're done.
+		h.haveNick = false
+	case irc.RPL_ENDOFMOTD, irc.ERR_NOMOTD:
+		h.haveMOTD = true
+	}
+}
+
 // Information about the state of the connection. Note that we store one of these
 // indepentently for both client and server; their views may not always align.
 type session struct {
 	irc.ClientID
-	// whether the handshake's NICK and USER messages have been recieved:
-	nickRecieved, userRecieved bool
+
+	handshake handshakeState
 
 	channels map[string]bool // List of channels we're in.
-}
-
-func (s *session) inHandshake() bool {
-	return !(s.nickRecieved && s.userRecieved)
 }
 
 // Return true if the prefix identifies the user associated with this session,
@@ -175,6 +210,8 @@ func (p *Proxy) sendServer(msg *irc.Message) error {
 	if err != nil {
 		p.logger.Errorf("sendServer(): error: %v.\n", err)
 		p.reset()
+	} else if !p.server.handshake.Done() {
+		p.server.handshake.Update(msg)
 	}
 	return err
 }
@@ -189,6 +226,8 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 	if err != nil {
 		p.logger.Errorf("sendClient(): error: %v.\n", err)
 		p.dropClient()
+	} else if !p.client.handshake.Done() {
+		p.client.handshake.Update(msg)
 	}
 	return err
 }
@@ -216,7 +255,7 @@ func (p *Proxy) serve() {
 			p.client.setup(clientConn)
 
 			// If we're not done with the handshake, restart the server connection too.
-			if p.server.inHandshake() {
+			if !p.server.handshake.Done() {
 				p.server.shutdown()
 				p.logger.Debugln("Connecting to server...")
 				serverConn, err := p.serverConnector.Connect()
@@ -235,65 +274,44 @@ func (p *Proxy) serve() {
 	}
 }
 
-func (p *Proxy) advanceHandshake(command string) {
-	for _, c := range []*connection{p.client, p.server} {
-		switch command {
-		case "NICK":
-			c.session.nickRecieved = true
-		case "USER":
-			c.session.userRecieved = true
-		default:
-			panic("advanceHandshake() called with something other " +
-				"than USER or NICK.")
-		}
-	}
-}
-
 func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 	switch msg.Command {
-	case "PASS":
-		if p.server.inHandshake() {
-			// XXX: The client should only be sending a PASS before NICK
-			// and USER. we're not checking this, and just forwarding to the
-			// server. Might be nice to do a bit more validation ourselves.
-			p.sendServer(msg)
-		}
-	case "USER", "NICK":
-		if p.server.inHandshake() {
-			p.sendServer(msg)
-			p.advanceHandshake(msg.Command)
+	case "PASS", "USER", "NICK":
+		// XXX: The client should only be sending a PASS before NICK
+		// and USER. we're not checking this, and just forwarding to the
+		// server. Might be nice to do a bit more validation ourselves.
 
-			// One of two things will be the case here:
+		if !p.server.handshake.Done() {
+			// Client and server agree on the handshake state, so just pass
+			// the message through:
+			p.sendServer(msg)
+
+			// One of two things will be the true here:
 			//
-			// 1. We're still not done with the handshake, in which case we return
-			//    and wait for further messages
-			// 2. We've just finished the handshake on both sides, so the server will
-			//    take care of the welcome messages itself.
+			// 1. sendServer failed, in which case it will have reset the connections.
+			// 2. The client and server still agree on the handshake state, so we
+			//    don't need to make any adjustments ourselves.
 			//
-			// In both cases we can just return
+			// In both cases we can just return.
 			return
 		}
 
 		// XXX: we ought to do at least a little sanity checking here. e.g.
 		// what if the client sends a nick other than what we have on file?
-		p.advanceHandshake(msg.Command)
-		if p.client.inHandshake() {
-			// Client still has more handshaking to do; we can return and wait for
-			// more messages.
-			return
-		}
 
-		// The server thinks the handshake is done, so we need to produce the welcome
-		// messages ourselves.
-
-		if !p.haveMsgCache {
-			// This is probably a bug. TODO: We should report it to the user in a
-			// more comprehensible way.
-			p.logger.Errorln("no message cache on client reconnect!")
-			p.reset()
-		} else {
+		if p.server.handshake.Done() && !p.client.handshake.Done() {
 			// Server already thinks we're done; it won't send the welcome sequence,
 			// so we need to do it ourselves.
+
+			if !p.haveMsgCache {
+				// We don't have a cached welcome message to send! This is probably
+				// a bug. TODO: We should report it to the user in a more
+				// comprehensible way.
+				p.logger.Errorln("no message cache on client reconnect!")
+				p.reset()
+				return
+			}
+
 			clientID := p.server.session.ClientID.String()
 			messages := []*irc.Message{
 				&irc.Message{
@@ -345,9 +363,11 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	if err := msg.Validate(); err != nil {
 		p.sendClient((*irc.Message)(err))
 		p.dropClient()
+		return
 	}
 
-	if p.client.inHandshake() {
+	if !p.client.handshake.Done() {
+		p.client.handshake.Update(msg)
 		p.handleHandshakeMessage(msg)
 		return
 	}
@@ -389,19 +409,33 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.reset()
 		return
 	}
+
+	if !p.server.handshake.Done() {
+		p.server.handshake.Update(msg)
+	}
+
 	switch msg.Command {
 	case "PING":
 		msg.Prefix = ""
 		msg.Command = "PONG"
 		p.sendServer(msg)
-	case irc.ERR_NONICKNAMEGIVEN, irc.ERR_ERRONEUSNICKNAME, irc.ERR_NICKNAMEINUSE,
+
+	// Things we can pass through to the client without any extra handling:
+	case
+		irc.RPL_MOTDSTART,
+		irc.RPL_MOTD,
+
+		// Various nick related errors. TODO: we should be more careful;
+		// at least based on the RFC, NICKCOLLISION could potnetially happen without
+		// any action on our part, so we'd have to somehow update our state.
+		// For the most part however, this is just the client having done
+		// something that's failed, and we just need to forward the error.
+		irc.ERR_NONICKNAMEGIVEN,
+		irc.ERR_ERRONEUSNICKNAME,
+		irc.ERR_NICKNAMEINUSE,
 		irc.ERR_NICKCOLLISION:
-		if p.client.inHandshake() {
-			// The client sent a NICK which was rejected by the server. We unset the
-			// nickRecieved bit (and of course forward the message):
-			p.client.session.nickRecieved = false
-			p.sendClient(msg)
-		}
+
+		p.sendClient(msg)
 	case irc.RPL_WELCOME:
 		p.msgCache.welcome = msg.Params[1]
 
@@ -425,6 +459,11 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		if p.sendClient(msg) == nil {
 			p.client.session.ClientID = clientID
 		}
+
+	// We can mostly just pass these through to the client and it will do the right
+	// thing, but we need to save them for when the client disconnects and then
+	// reconnects, becasue the server won't send them again if it thinks the client
+	// is already connected:
 	case irc.RPL_YOURHOST:
 		p.msgCache.yourhost = msg.Params[1]
 		p.sendClient(msg)
@@ -435,8 +474,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.msgCache.myinfo = msg.Params[1:]
 		p.sendClient(msg)
 		p.haveMsgCache = true
-	case irc.RPL_MOTDSTART, irc.RPL_MOTD:
-		p.sendClient(msg)
+
 	case irc.RPL_ENDOFMOTD, irc.ERR_NOMOTD:
 		p.sendClient(msg)
 		// If we're just reconnecting, this is the appropriate point to send
@@ -471,7 +509,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 
 		p.logger.Debugf("Got %s message for channel %q.", msg.Command, msg.Params[0])
 
-		if p.client.inHandshake() || p.sendClient(msg) != nil {
+		if !p.client.handshake.Done() || p.sendClient(msg) != nil {
 			// Can't send the message to the client, so log it.
 			p.logMessage(msg)
 		} else {
@@ -492,7 +530,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 func (p *Proxy) dropClient() {
 	p.logger.Debugln("dropClient(): dropping client connection.")
 	p.client.shutdown()
-	if p.server.inHandshake() {
+	if !p.server.handshake.Done() {
 		p.logger.Debugln("dropClient(): handshake incomplete; dropping server connection.")
 		p.server.shutdown()
 	}
