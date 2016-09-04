@@ -117,6 +117,39 @@ func (h *handshakeState) Update(msg *irc.Message) {
 	}
 }
 
+type channelState struct {
+	topic string // the topic for the channel, if any.
+
+	// Initial users in the channel. If the client is connected, this is
+	// modified as users enter and leave the channel, but if the client
+	// is disconnected, this is left unchanged. In this case we save
+	// JOIN/PART messages to the log, and update this as we replay them.
+	// This is important since it avoids the log e.g. conveying a PRIVMSG
+	// for a user who is not in the channel, which might confuse the client.
+	// putting these users in RPL_NAMREPLY and then replaying the log
+	// should get us to the correct final state.
+	initialUsers map[string]bool
+}
+
+func (s *channelState) update(msg *irc.Message) {
+	// TODO: report the errors from ParseClientID somehow.
+	switch msg.Command {
+	case "JOIN":
+		clientID, err := irc.ParseClientID(msg.Prefix)
+		if err != nil {
+			return
+		}
+		s.initialUsers[clientID.Nick] = true
+	case "PART", "KICK", "QUIT":
+		// TODO: we need to specially handle the case were *we* are leaving.
+		clientID, err := irc.ParseClientID(msg.Prefix)
+		if err != nil {
+			return
+		}
+		delete(s.initialUsers, clientID.Nick)
+	}
+}
+
 // Information about the state of the connection. Note that we store one of these
 // indepentently for both client and server; their views may not always align.
 type session struct {
@@ -124,7 +157,7 @@ type session struct {
 
 	handshake handshakeState
 
-	channels map[string]bool // List of channels we're in.
+	channels map[string]channelState // State of channels we're in.
 }
 
 // Return true if the prefix identifies the user associated with this session,
@@ -190,7 +223,7 @@ func (p *Proxy) Stop() {
 func (c *connection) setup(conn irc.ReadWriteCloser) {
 	c.ReadWriteCloser = conn
 	c.Chan = irc.ReadAll(conn)
-	c.session.channels = make(map[string]bool)
+	c.session.channels = make(map[string]channelState)
 }
 
 func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *log.Logger) {
@@ -380,11 +413,12 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		p.logger.Debugln("Client sent quit; disconnecting.")
 		p.dropClient()
 	case "JOIN":
-		if p.server.session.channels[msg.Params[0]] {
+		channelName := msg.Params[0]
+		serverState, joinedOnServer := p.server.session.channels[channelName]
+		if joinedOnServer {
 			msg.Prefix = p.client.session.ClientID.String()
 			if p.sendClient(msg) == nil {
-				p.client.session.channels[msg.Params[0]] = true
-				p.replayLog(msg.Params[0])
+				p.rejoinChannel(channelName, serverState)
 			}
 		} else {
 			p.sendServer(msg)
@@ -394,6 +428,49 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		// We also need to inspect a lot of these and adjust our own state.
 		p.sendServer(msg)
 	}
+}
+
+func (p *Proxy) rejoinChannel(channelName string, serverState channelState) {
+	joinMessage := &irc.Message{
+		Prefix:  p.client.session.ClientID.String(),
+		Command: "JOIN",
+		Params:  []string{channelName},
+	}
+	if p.sendClient(joinMessage) != nil {
+		return
+	}
+	if serverState.topic != "" {
+		rplTopic := &irc.Message{
+			Command: irc.RPL_TOPIC,
+			Params: []string{
+				p.client.session.ClientID.String(),
+				channelName,
+				serverState.topic,
+			},
+		}
+		if p.sendClient(rplTopic) != nil {
+			return
+		}
+	}
+
+	clientState := channelState{
+		topic:        serverState.topic,
+		initialUsers: make(map[string]bool, len(serverState.initialUsers)),
+	}
+
+	for nick, _ := range serverState.initialUsers {
+		rplNamreply := &irc.Message{
+			Command: irc.RPL_NAMREPLY,
+			Params:  []string{channelName, nick},
+		}
+		if p.sendClient(rplNamreply) != nil {
+			return
+		}
+		clientState.initialUsers[nick] = true
+	}
+
+	p.client.session.channels[channelName] = clientState
+	p.replayLog(channelName)
 }
 
 func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
@@ -486,8 +563,9 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// be empty anyway:
 		p.replayLog(p.client.session.ClientID.Nick)
 	case "PRIVMSG", "NOTICE":
-		if p.client.session.channels[msg.Params[0]] ||
-			p.client.session.IsMe(msg.Params[0]) {
+		targetName := msg.Params[0]
+		_, inChannel := p.client.session.channels[targetName]
+		if inChannel || p.client.session.IsMe(targetName) {
 
 			if p.sendClient(msg) != nil {
 				p.logMessage(msg)
@@ -499,12 +577,16 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// Set our presence for the channel according to the message; if it's not
 		// about us, nothing changes. otherwise, for a JOIN message we mark
 		// ourselves present, and otherwise we mark ourselves absent.
-		setPresence := func(m map[string]bool) {
+		setPresence := func(m map[string]channelState) {
 			if !p.server.session.IsMe(msg.Prefix) {
 				return
 			}
 			if msg.Command == "JOIN" {
-				m[msg.Params[0]] = true
+				m[msg.Params[0]] = channelState{
+					initialUsers: map[string]bool{
+						p.server.session.ClientID.Nick: true,
+					},
+				}
 			} else {
 				delete(m, msg.Params[0])
 			}
@@ -561,13 +643,17 @@ func (p *Proxy) replayLog(channelName string) {
 			channelName, err)
 		return
 	}
+	channelState := p.client.session.channels[channelName]
 	defer cursor.Close()
 	for {
 		msg, err := cursor.Get()
 		if err == nil {
-			p.sendClient(msg)
+			if p.sendClient(msg) != nil {
+				return
+			}
 		} else if err == io.EOF {
 			p.logger.Debugf("Done replaying log for %q.", channelName)
+			p.client.session.channels[channelName] = channelState
 			chLog.Clear()
 			return
 		} else {
@@ -579,6 +665,7 @@ func (p *Proxy) replayLog(channelName string) {
 			)
 			return
 		}
+		(&channelState).update(msg)
 		cursor.Next()
 	}
 }
