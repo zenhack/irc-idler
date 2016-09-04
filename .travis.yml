@@ -3,8 +3,12 @@ go:
   - 1.6
   - 1.7
   - tip
+env:
+  global:
+    - test_dirs='./cmd/... ./irc/... ./sandstorm/... ./storage/...'
 go_import_path: zenhack.net/go/irc-idler
-script: |
-  for d in $(find * -name *_test.go |grep -v ^vendor/ | xargs dirname |uniq); do
-    (cd $d; go test)
-  done
+install:
+  - go get -t $test_dirs
+  - go get ./vendor/github.com/Sirupsen/logrus
+script:
+  - go test -v $test_dirs
