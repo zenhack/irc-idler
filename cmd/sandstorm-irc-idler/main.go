@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 	"io"
-	"log"
-	"os"
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/proxy"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
@@ -43,13 +40,12 @@ func main() {
 	api, err := grain.ConnectAPI(ctx, uiView)
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error: ", err)
-		os.Exit(1)
+		logger.Fatalln("Error: ", err)
 	}
-	log.Println("Got API: ", api)
-	log.Println("Going to try to stay awake...")
+	logger.Debugln("Got API: ", api)
+	logger.Debugln("Going to try to stay awake...")
 	api.StayAwake(ctx, nil).Handle()
-	log.Println("Got the wake lock.")
+	logger.Debugln("Got the wake lock.")
 
 	// Stop the running proxy daemon (if any) and start a new one.
 	newDaemon := func() {
@@ -73,7 +69,7 @@ func main() {
 	for {
 		select {
 		case ipNetworkCap := <-backend.IpNetworkCaps:
-			fmt.Println("got ipNetwork cap: ", ipNetworkCap)
+			logger.Debugln("got ipNetwork cap: ", ipNetworkCap)
 
 			// TODO: actually put the resulting token somewhere for future use.
 			api.Save(
@@ -90,7 +86,7 @@ func main() {
 				newDaemon()
 			}
 		case serverConfig = <-backend.SetServerConfig:
-			fmt.Println("got server config: ", serverConfig)
+			logger.Debugln("got server config: ", serverConfig)
 			if ipNetwork != nil {
 				newDaemon()
 			}
