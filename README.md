@@ -5,7 +5,7 @@ be the preferred way of running it, though it will work in traditional
 environments as well.
 
 This is very much a work in progress. I'm currently dogfooding the
-non-sandstorm version, but it's not exactly polished.
+sandstorm version, but it's not exactly polished.
 
 # Why
 
@@ -21,25 +21,22 @@ server itself -- you connect to IRC idler, and it proxies the
 connection. When you disconnect, it stays connected, and flags you as
 away until you reconnect.
 
-## Design Ideas
+## Sandstorm Design Notes
 
 IRC isn't a web-app so building a sandstorm app that offers it is
 slightly more complicated. We'd like to still leverage sandstorm for
-authentication and authorization. One idea for how to do this is to
-listen on a websocket instead of a raw TCP port, and have users use
-[websocket-proxy][2] to connect. This scheme also translates decently
-to the non-sandstorm case.
+authentication and authorization. We do this by listening on a websocket
+instead of a raw TCP port, and have users use [websocket-proxy][2] to
+connect. This scheme also translates decently to the non-sandstorm case.
 
-On sandstorm, the plan is to have each IRC connection run in its own
-grain. The websocket trick means we don't need to allocate a separate
-port to each network.
+On sandstorm, each IRC connection runs in its own grain. The websocket
+trick means we don't need to allocate a separate port to each network.
 
 # Building
 
 The sandstorm version is in `cmd/sandstorm-irc-idler`, the non-sandstorm
 version is in `cmd/irc-idler`. Either executable can be built via
-standard go
-build.
+standard go build.
 
 Note on the sandstorm build: The vagrant-spk boilerplate doesn't
 actually compile anything; you have to build the executable on the host
@@ -55,6 +52,34 @@ The reasons for this are twofold:
    old (1.3.x), and I'd rather not be limited to what was available
    then.
 
+The script `./run-spk-dev.sh` will recompile the sandstorm app and then
+run vagrant-spk dev.
+
+# Using (sandstorm)
+
+To use the sandstorm version, you must be an administrator for your
+sandstorm installation. This is because IRC Idler requires raw network
+access, which only an administrator can grant.
+
+Each irc network you want to connect to must run in its own grain. To
+set up a new network:
+
+* Create a new IRC Idler grain
+* Fill out the settings for the IRC server on IRC Idler's web
+  interface. For example, to connect to freenode, you would supply Host:
+  irc.freenode.net and Port: 6667. Note that TLS is not currently
+  supported for the sandstorm version, but this is in the pipeline (and
+  will not be difficult).
+* Click on the "Request Network Access" button, and grant network access
+  in the dialog that sandstorm presents
+* You will be presented with a websocket URL you can use to connect. You
+  can get a traditional IRC client to connect to this by using
+  [websocket-proxy][2]:
+
+    websocket-proxy -listen :6000 -url ${websocket_url}
+
+  ...and then pointing your IRC client at localhost port 6000.
+
 # Using (non-sandstorm)
 
 As an example, to connect to Freenode via TLS:
@@ -65,12 +90,14 @@ Then, point your irc client at port 6667 on the host running irc-idler.
 
 Note well: irc-idler does not support accepting client connections via
 TLS, and it preforms no authentication. As a consequence, you should run
-it on a trusted network. In my case, I have it only listening on
+it on a trusted network. One solution is to have it only listening on
 localhost on the server that's running it (and have port 6667 firewalled
-off for good measure), and I use ssh port forwarding to connect from my
+off for good measure), and use ssh port forwarding to connect from your
 laptop/desktop.
 
-This will hopefully be more streamlined in the future.
+This will hopefully be more streamlined in the future; one possibility
+is to make the websocket solution used by the sandstorm version
+available for the non-sandstorm version as well.
 
 # License
 
