@@ -26,6 +26,7 @@ var minParams = map[string]int{
 	RPL_YOURHOST: 2,
 	RPL_CREATED:  2,
 	RPL_MYINFO:   5,
+	RPL_TOPIC:    3,
 }
 
 // Validate the message m. This performs various checks:
