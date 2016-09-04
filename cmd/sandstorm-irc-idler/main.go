@@ -113,10 +113,16 @@ func main() {
 	api.StayAwake(ctx, nil).Handle()
 	logger.Debugln("Got the wake lock.")
 
-	ipNetwork, err = loadIpNetwork(ctx, api)
-	if err != nil {
-		logger.Infoln("Failed to load ipNetwork capability:", err)
-	}
+	/*
+		// TODO: it would be nice if we could just restore the capability, but
+		// We're having an issue where the capability seems to load fine, but doesn't
+		// actually work. I'm not sure ipNetwork is even actually persistent; need
+		// to investigate this further.
+		ipNetwork, err = loadIpNetwork(ctx, api)
+		if err != nil {
+			logger.Infoln("Failed to load ipNetwork capability:", err)
+		}
+	*/
 
 	serverConfig, err = loadServerConfig()
 	if err != nil {
