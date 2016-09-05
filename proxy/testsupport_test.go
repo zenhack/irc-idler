@@ -83,13 +83,12 @@ type ProxyAction interface {
 }
 
 type ProxyState struct {
-	ToServer, ToClient     <-chan *irc.Message
-	FromServer, FromClient chan<- *irc.Message
-	ConnectClient          chan<- irc.ReadWriteCloser
-	ConnectServer          <-chan irc.ReadWriteCloser
-	ConnectRequests        <-chan struct{}
-	ClientClose            chan struct{}
-	ServerClose            chan struct{}
+	ToServer, ToClient                 <-chan *irc.Message
+	FromServer, FromClient             chan<- *irc.Message
+	ConnectClient, ConnectServer       chan<- irc.ReadWriteCloser
+	ConnectRequests                    <-chan struct{}
+	DropClient, DropServer             <-chan struct{}
+	ClientDisconnect, ServerDisconnect context.CancelFunc
 }
 
 type (
@@ -116,29 +115,61 @@ func (e *MsgsDiffer) Error() string {
 	)
 }
 
-func (cc ClientConnect) Expect(state *ProxyState, timeout time.Duration) error {
-	toClient := make(chan *irc.Message)
-	fromClient := make(chan *irc.Message)
-
-	oldState := *state
-	state.ToClient = toClient
-	state.FromClient = fromClient
-
-	oldCtx := context.TODO()
+func NewRWC(oldCtx context.Context) (to, from chan *irc.Message, rwc *ChanRWC) {
+	to = make(chan *irc.Message)
+	from = make(chan *irc.Message)
 	ctx, cancel := context.WithCancel(oldCtx)
-	rwc := &ChanRWC{
-		Send:       toClient,
-		Recv:       fromClient,
+	rwc = &ChanRWC{
+		Send:       to,
+		Recv:       from,
 		Context:    ctx,
 		CancelFunc: cancel,
 	}
+	return
+}
+
+func (cd ClientDisconnect) Expect(state *ProxyState, timeout time.Duration) error {
+	state.ClientDisconnect()
+	return nil
+}
+
+func (sd ServerDisconnect) Expect(state *ProxyState, timeout time.Duration) error {
+	state.ServerDisconnect()
+	return nil
+}
+
+func (cc ClientConnect) Expect(state *ProxyState, timeout time.Duration) error {
+	toClient, fromClient, rwc := NewRWC(context.TODO())
+
 	select {
 	case state.ConnectClient <- rwc:
+		state.ToClient = toClient
+		state.FromClient = fromClient
+		state.DropClient = rwc.Context.Done()
+		state.ClientDisconnect = rwc.CancelFunc
 		return nil
-	case msg := <-oldState.ToClient:
-		return fmt.Errorf("Unexpected message to client: %q", msg)
 	case <-time.After(timeout):
 		return Timeout
+	}
+}
+
+func (cs ConnectServer) Expect(state *ProxyState, timeout time.Duration) error {
+	select {
+	case <-time.After(timeout):
+		return Timeout
+	case <-state.ConnectRequests:
+		toServer, fromServer, rwc := NewRWC(context.TODO())
+
+		select {
+		case <-time.After(timeout):
+			return Timeout
+		case state.ConnectServer <- rwc:
+			state.ToServer = toServer
+			state.FromServer = fromServer
+			state.DropServer = rwc.Context.Done()
+			state.ServerDisconnect = rwc.CancelFunc
+			return nil
+		}
 	}
 }
 
@@ -155,10 +186,7 @@ func toMsgExpect(expected *irc.Message, msgChan <-chan *irc.Message, timeout tim
 	select {
 	case <-time.After(timeout):
 		return Timeout
-	case actual, ok := <-msgChan:
-		if !ok {
-			return UnexpectedDisconnect
-		}
+	case actual := <-msgChan:
 		if !reflect.DeepEqual(expected, actual) {
 			return &MsgsDiffer{
 				Expected: expected,
@@ -169,24 +197,21 @@ func toMsgExpect(expected *irc.Message, msgChan <-chan *irc.Message, timeout tim
 	return nil
 }
 
-func dropExpect(msgChan <-chan *irc.Message, timeout time.Duration) error {
+func dropExpect(closeChan <-chan struct{}, timeout time.Duration) error {
 	select {
 	case <-time.After(timeout):
 		return Timeout
-	case _, ok := <-msgChan:
-		if ok {
-			return ExpectedDisconnect
-		}
+	case <-closeChan:
 		return nil
 	}
 }
 
 func (dc DropClient) Expect(state *ProxyState, timeout time.Duration) error {
-	return dropExpect(state.ToClient, timeout)
+	return dropExpect(state.DropClient, timeout)
 }
 
 func (ds DropServer) Expect(state *ProxyState, timeout time.Duration) error {
-	return dropExpect(state.ToServer, timeout)
+	return dropExpect(state.DropServer, timeout)
 }
 
 func (ts *ToServer) Expect(state *ProxyState, timeout time.Duration) error {
