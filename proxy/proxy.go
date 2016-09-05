@@ -87,6 +87,12 @@ func (h handshakeState) Done() bool {
 	return h.haveNick && h.haveUser && h.haveMOTD
 }
 
+// Return true if the handshake is complete on the client side, but still
+// waiting for (some of) the server's welcome sequence.
+func (h handshakeState) WantsWelcome() bool {
+	return h.haveNick && h.haveUser && !h.haveMOTD
+}
+
 // Update the state to be consistent with `msg` having just been transferred.
 // Note that we don't have to specify whether this is the state for the
 // client or server, or whether the message was sent or received, because
@@ -299,7 +305,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 		// XXX: we ought to do at least a little sanity checking here. e.g.
 		// what if the client sends a nick other than what we have on file?
 
-		if p.server.handshake.Done() && !p.client.handshake.Done() {
+		if p.server.handshake.Done() && p.client.handshake.WantsWelcome() {
 			// Server already thinks we're done; it won't send the welcome sequence,
 			// so we need to do it ourselves.
 
