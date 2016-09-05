@@ -5,7 +5,7 @@ go:
   - tip
 env:
   global:
-    - test_dirs='./cmd/... ./irc/... ./sandstorm/... ./storage/...'
+    - test_dirs='./cmd/... ./irc/... ./proxy/... ./sandstorm/... ./storage/...'
 go_import_path: zenhack.net/go/irc-idler
 install:
   - go get -t $test_dirs
