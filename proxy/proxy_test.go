@@ -99,3 +99,13 @@ func TestBasicReconnect(t *testing.T) {
 		reconnect,
 	})
 }
+
+func TestChannelRejoinNoBackLog(t *testing.T) {
+	TraceTest(t, ExpectMany{
+		initialConnect,
+		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
+		ForwardS2C(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
+		// TODO: complete this. should replay topic and list members, then we
+		// should disconnect, reconnect, and get the same thing.
+	})
+}
