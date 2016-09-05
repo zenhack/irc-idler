@@ -19,9 +19,9 @@ package proxy
 import (
 	"errors"
 	"fmt"
-	"io"
-	//"github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
+	"io"
 	"reflect"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
@@ -300,7 +300,9 @@ func StartTestProxy() *ProxyState {
 		Responses: connectResponses,
 	}
 
-	proxy := NewProxy(clientConns, connector, nil) // TODO: pass a logger.
+	logger := logrus.New()
+	logger.Level = logrus.DebugLevel
+	proxy := NewProxy(clientConns, connector, logger)
 	go proxy.Run()
 
 	return &ProxyState{
