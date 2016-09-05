@@ -6,8 +6,8 @@ package proxy
 // is doing things like:
 //
 // Expect(state, timeout,
-// 	&ConnectClient{},
-// 	&ConnectServer{},
+// 	ClientConnect{},
+// 	ConnectServer{},
 // 	&FromClient{Command: "NICK", Params: []string{"bob"}},
 // 	&ToServer{Command: "NICK", Params: []string{"bob"}},
 // 	...
@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	//"github.com/Sirupsen/logrus"
+	"golang.org/x/net/context"
 	"reflect"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
@@ -34,9 +35,33 @@ var (
 )
 
 type ChanRWC struct {
-	Send      chan<- *irc.Message
-	Recv      <-chan *irc.Message
-	CloseChan chan struct{}
+	Send chan<- *irc.Message
+	Recv <-chan *irc.Message
+	context.Context
+	context.CancelFunc
+}
+
+func (c *ChanRWC) Close() error {
+	c.CancelFunc()
+	return nil
+}
+
+func (c *ChanRWC) ReadMessage() (*irc.Message, error) {
+	select {
+	case msg := <-c.Recv:
+		return msg, nil
+	case <-c.Context.Done():
+		return nil, c.Context.Err()
+	}
+}
+
+func (c *ChanRWC) WriteMessage(msg *irc.Message) error {
+	select {
+	case c.Send <- msg:
+		return nil
+	case <-c.Context.Done():
+		return c.Context.Err()
+	}
 }
 
 type ChanConnector struct {
@@ -51,47 +76,6 @@ func (c *ChanConnector) Connect() (irc.ReadWriteCloser, error) {
 		return nil, io.EOF
 	}
 	return ret, nil
-}
-
-func NewChanConn() (*ChanRWC, *ChanRWC) {
-	to := make(chan *irc.Message)
-	from := make(chan *irc.Message)
-	closeChan := make(chan struct{}, 1)
-
-	left := &ChanRWC{
-		Send:      to,
-		Recv:      from,
-		CloseChan: closeChan,
-	}
-	right := &ChanRWC{
-		Send:      from,
-		Recv:      to,
-		CloseChan: closeChan,
-	}
-	return left, right
-}
-
-func (c *ChanRWC) Close() error {
-	c.CloseChan <- struct{}{}
-	return nil
-}
-
-func (c *ChanRWC) ReadMessage() (*irc.Message, error) {
-	select {
-	case msg := <-c.Recv:
-		return msg, nil
-	case <-c.CloseChan:
-		return nil, io.EOF
-	}
-}
-
-func (c *ChanRWC) WriteMessage(msg *irc.Message) error {
-	select {
-	case c.Send <- msg:
-		return nil
-	case <-c.CloseChan:
-		return io.EOF
-	}
 }
 
 type ProxyAction interface {
@@ -130,6 +114,32 @@ func (e *MsgsDiffer) Error() string {
 		e.Expected,
 		e.Actual,
 	)
+}
+
+func (cc ClientConnect) Expect(state *ProxyState, timeout time.Duration) error {
+	toClient := make(chan *irc.Message)
+	fromClient := make(chan *irc.Message)
+
+	oldState := *state
+	state.ToClient = toClient
+	state.FromClient = fromClient
+
+	oldCtx := context.TODO()
+	ctx, cancel := context.WithCancel(oldCtx)
+	rwc := &ChanRWC{
+		Send:       toClient,
+		Recv:       fromClient,
+		Context:    ctx,
+		CancelFunc: cancel,
+	}
+	select {
+	case state.ConnectClient <- rwc:
+		return nil
+	case msg := <-oldState.ToClient:
+		return fmt.Errorf("Unexpected message to client: %q", msg)
+	case <-time.After(timeout):
+		return Timeout
+	}
 }
 
 func fromMsgExpect(msg *irc.Message, msgChan chan<- *irc.Message, timeout time.Duration) error {
