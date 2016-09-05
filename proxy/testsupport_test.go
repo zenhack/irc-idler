@@ -63,6 +63,46 @@ func (c *ChanRWC) WriteMessage(msg *irc.Message) error {
 	}
 }
 
+type NestedError struct {
+	Index int
+	Ctx   interface{}
+	Err   error
+}
+
+func ForwardC2S(msg *irc.Message) ProxyAction {
+	return ExpectMany{
+		(*FromClient)(msg),
+		(*ToServer)(msg),
+	}
+}
+
+func ForwardS2C(msg *irc.Message) ProxyAction {
+	return ExpectMany{
+		(*FromServer)(msg),
+		(*ToClient)(msg),
+	}
+}
+
+func (e *NestedError) Error() string {
+	return fmt.Sprintf("Error in action #%d (%v):\n\n %v", e.Index, e.Ctx, e.Err)
+}
+
+type ExpectMany []ProxyAction
+
+func (e ExpectMany) Expect(state *ProxyState, timeout time.Duration) error {
+	for i, v := range e {
+		err := v.Expect(state, timeout)
+		if err != nil {
+			return &NestedError{
+				Index: i,
+				Ctx:   v,
+				Err:   err,
+			}
+		}
+	}
+	return nil
+}
+
 type ChanConnector struct {
 	Requests  chan<- struct{}
 	Responses <-chan irc.ReadWriteCloser
@@ -102,6 +142,18 @@ type (
 	ConnectServer    struct{}
 	ServerDisconnect struct{}
 )
+
+func (a *DropClient) String() string       { return "&DropClient{}" }
+func (a *ClientConnect) String() string    { return "&ClientConnect{}" }
+func (a *ClientDisconnect) String() string { return "&ClientDisconnect{}" }
+func (a *ConnectServer) String() string    { return "&ConnectServer{}" }
+func (a *ServerDisconnect) String() string { return "&ServerDisconnect{}" }
+func (a *DropServer) String() string       { return "&DropServer{}" }
+
+func (m *ToClient) String() string   { return "&ToClient(" + (*irc.Message)(m).String() + ")" }
+func (m *ToServer) String() string   { return "&ToServer(" + (*irc.Message)(m).String() + ")" }
+func (m *FromClient) String() string { return "&FromClient(" + (*irc.Message)(m).String() + ")" }
+func (m *FromServer) String() string { return "&FromServer(" + (*irc.Message)(m).String() + ")" }
 
 type MsgsDiffer struct {
 	Expected, Actual *irc.Message
