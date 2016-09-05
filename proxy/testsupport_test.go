@@ -5,13 +5,13 @@ package proxy
 // The main thing this is intended to support verifying traces of
 // expected behavior, e.g.
 //
-// Expect(state, timeout,
+// TraceTest(t, ExpectMany{
 // 	ClientConnect{},
 // 	ConnectServer{},
 // 	&FromClient{Command: "NICK", Params: []string{"bob"}},
 // 	&ToServer{Command: "NICK", Params: []string{"bob"}},
 // 	...
-// )
+// })
 
 // TODO: general concern: we're using io.EOF in a lot of places where it's
 // arguably inappropriate
@@ -22,6 +22,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 	"io"
+	"testing"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
 )
@@ -280,13 +281,20 @@ func (fc *FromClient) Expect(state *ProxyState, timeout time.Duration) error {
 	return fromMsgExpect((*irc.Message)(fc), state.FromClient, timeout)
 }
 
-func Expect(state *ProxyState, timeout time.Duration, actions ...ProxyAction) error {
-	for _, action := range actions {
-		if err := action.Expect(state, timeout); err != nil {
-			return err
-		}
+func ManyMsg(convert func(msg *irc.Message) ProxyAction, msgs []*irc.Message) ProxyAction {
+	ret := make(ExpectMany, len(msgs))
+	for i, v := range msgs {
+		ret[i] = convert(v)
 	}
-	return nil
+	return ret
+}
+
+func ManyToClient(msgs []*irc.Message) ProxyAction {
+	ret := make(ExpectMany, len(msgs))
+	for i, v := range msgs {
+		ret[i] = (*ToClient)(v)
+	}
+	return ret
 }
 
 func StartTestProxy() *ProxyState {
@@ -308,5 +316,13 @@ func StartTestProxy() *ProxyState {
 		ConnectServer:   connectResponses,
 		ConnectRequests: connectRequests,
 		ConnectClient:   clientConns,
+	}
+}
+
+func TraceTest(t *testing.T, action ProxyAction) {
+	state := StartTestProxy()
+	err := action.Expect(state, time.Second)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

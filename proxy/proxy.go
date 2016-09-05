@@ -54,7 +54,7 @@ type Proxy struct {
 	// time to use when the client reconnects:
 	haveMsgCache bool
 	msgCache     struct {
-		welcome  string
+		welcome  []string
 		yourhost string
 		created  string
 		myinfo   []string
@@ -316,10 +316,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 			messages := []*irc.Message{
 				&irc.Message{
 					Command: irc.RPL_WELCOME,
-					Params: []string{
-						clientID,
-						p.msgCache.welcome,
-					},
+					Params:  p.msgCache.welcome,
 				},
 				&irc.Message{
 					Command: irc.RPL_YOURHOST,
@@ -437,11 +434,11 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 
 		p.sendClient(msg)
 	case irc.RPL_WELCOME:
-		p.msgCache.welcome = msg.Params[1]
+		p.msgCache.welcome = msg.Params
 
 		// Extract the client ID. annoyingly, this isn't its own argument, so we
 		// have to pull it out of the welcome message manually.
-		parts := strings.Split(p.msgCache.welcome, " ")
+		parts := strings.Split(msg.Params[1], " ")
 		clientIDString := parts[len(parts)-1]
 		clientID, err := irc.ParseClientID(clientIDString)
 
