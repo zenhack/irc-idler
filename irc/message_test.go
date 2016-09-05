@@ -7,23 +7,6 @@ import (
 	"testing/quick"
 )
 
-// Compare m1 and m2 for equality. We can't just use (==), as it
-// doesn't work on string slices (Message.Params).
-func msgEq(m1, m2 *Message) bool {
-	if m1.Prefix != m2.Prefix || m1.Command != m2.Command {
-		return false
-	}
-	if len(m1.Params) != len(m2.Params) {
-		return false
-	}
-	for i := range m1.Params {
-		if m1.Params[i] != m2.Params[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // example data for the tests
 var sampleMessages = []*Message{
 	&Message{Command: "PRIVMSG", Params: []string{"##cool_topic", "Hello!"}},
@@ -39,7 +22,7 @@ func checkReadBack(msg *Message) bool {
 	if err != nil {
 		fmt.Printf("Error reading back message: %v\n", err)
 		return false
-	} else if !msgEq(msg, result) {
+	} else if !msg.Eq(result) {
 		fmt.Printf(
 			"Read message %v differs from written %v.\n",
 			result,
@@ -72,7 +55,7 @@ func TestParseStringReadBack(t *testing.T) {
 			fmt.Printf("%q", err)
 			return false
 		}
-		if !msgEq(msg1, msg2) {
+		if !msg1.Eq(msg2) {
 			fmt.Printf("Messages differ: msg1: %v vs msg2: %v\n", msg1, msg2)
 			return false
 		}

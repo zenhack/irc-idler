@@ -133,6 +133,23 @@ func (msg *Message) String() string {
 	return buf.String()
 }
 
+// Compare m1 and m2 for equality. We can't just use (==), as it
+// doesn't work on string slices (Message.Params).
+func (m1 *Message) Eq(m2 *Message) bool {
+	if m1.Prefix != m2.Prefix || m1.Command != m2.Command {
+		return false
+	}
+	if len(m1.Params) != len(m2.Params) {
+		return false
+	}
+	for i := range m1.Params {
+		if m1.Params[i] != m2.Params[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // An ioReader reads Messages from an io.Reader.
 type ioReader struct {
 	lock    sync.Mutex

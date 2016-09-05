@@ -22,7 +22,6 @@ import (
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 	"io"
-	"reflect"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
 )
@@ -238,7 +237,7 @@ func toMsgExpect(expected *irc.Message, msgChan <-chan *irc.Message, timeout tim
 	case <-time.After(timeout):
 		return Timeout
 	case actual := <-msgChan:
-		if !reflect.DeepEqual(expected, actual) {
+		if !expected.Eq(actual) {
 			return &MsgsDiffer{
 				Expected: expected,
 				Actual:   actual,

@@ -474,6 +474,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.msgCache.myinfo = msg.Params[1:]
 		p.sendClient(msg)
 		p.haveMsgCache = true
+		p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
 
 	case irc.RPL_ENDOFMOTD, irc.ERR_NOMOTD:
 		p.sendClient(msg)
