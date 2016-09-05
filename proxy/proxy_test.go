@@ -46,7 +46,14 @@ var (
 		}),
 		ForwardS2C(&irc.Message{
 			Command: irc.RPL_MYINFO,
-			Params:  []string{"alice", "Some info about your host"},
+			Params: []string{
+				"testing.example.com",
+				"0.1",
+				// TODO: these might actually matter someday:
+				"0",
+				"0",
+				"Some info about your host",
+			},
 		}),
 		motd,
 	}
