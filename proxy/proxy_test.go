@@ -11,7 +11,7 @@ var (
 		ClientConnect{},
 		ConnectServer{},
 		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
-		ForwardC2S(&irc.Message{Command: "USER", Params: []string{"alice", "0", "*", ":Alice"}}),
+		ForwardC2S(&irc.Message{Command: "USER", Params: []string{"alice", "0", "*", "Alice"}}),
 		welcomeSequence,
 	}
 
@@ -61,7 +61,7 @@ var (
 	reconnect = ExpectMany{
 		&ClientConnect{},
 		&FromClient{Command: "NICK", Params: []string{"alice"}},
-		&FromClient{Command: "USER", Params: []string{"alice", "0", "*", ":Alice"}},
+		&FromClient{Command: "USER", Params: []string{"alice", "0", "*", "Alice"}},
 	}
 )
 
