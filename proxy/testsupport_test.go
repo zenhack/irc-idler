@@ -2,8 +2,8 @@ package proxy
 
 // Support code for tests.
 //
-// This is incomplete, but the main thing this is intended to support
-// is doing things like:
+// The main thing this is intended to support verifying traces of
+// expected behavior, e.g.
 //
 // Expect(state, timeout,
 // 	ClientConnect{},
@@ -11,8 +11,7 @@ package proxy
 // 	&FromClient{Command: "NICK", Params: []string{"bob"}},
 // 	&ToServer{Command: "NICK", Params: []string{"bob"}},
 // 	...
-//
-// i.e. We verify traces of expected behavior.
+// )
 
 // TODO: general concern: we're using io.EOF in a lot of places where it's
 // arguably inappropriate
