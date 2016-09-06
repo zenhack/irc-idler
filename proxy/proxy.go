@@ -458,9 +458,9 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *channelState) {
 	for nick, _ := range serverState.initialUsers {
 		rplNamreply := &irc.Message{
 			Command: irc.RPL_NAMEREPLY,
-			// XXX: The "=" denotes a public channel. at some point
+			// FIXME: The "=" denotes a public channel. at some point
 			// we should actually check this.
-			Params: []string{"=", channelName, nick},
+			Params: []string{p.server.session.ClientID.Nick, "=", channelName, nick},
 		}
 		if p.sendClient(rplNamreply) != nil {
 			return
@@ -554,6 +554,31 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.sendClient(msg)
 		p.haveMsgCache = true
 		p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
+	case irc.RPL_TOPIC:
+		channelName, topic := msg.Params[1], msg.Params[2]
+		p.server.session.channels[channelName].topic = topic
+		clientState := p.server.session.channels[channelName]
+		if clientState != nil && p.sendClient(msg) != nil {
+			clientState.topic = topic
+		}
+	case irc.RPL_NAMEREPLY:
+		mode := msg.Params[1]
+		channelName := msg.Params[2]
+		nicks := strings.Split(msg.Params[3], " ")
+
+		for _, nick := range nicks {
+			nick = strings.Trim(nick, " \r\n")
+			p.server.session.channels[channelName].initialUsers[nick] = true
+
+			// As far as the actual client's state is concerned, we could just send
+			// msg itself, once, but this makes the control flow a bit easier.
+			if p.sendClient(&irc.Message{
+				Command: irc.RPL_NAMEREPLY,
+				Params:  []string{msg.Params[0], mode, channelName, nick},
+			}) == nil {
+				p.client.session.channels[channelName].initialUsers[nick] = true
+			}
+		}
 
 	case irc.RPL_ENDOFMOTD, irc.ERR_NOMOTD:
 		p.sendClient(msg)
@@ -601,11 +626,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			// client knows about the change; update their state.
 			setPresence(p.client.session.channels)
 		}
-	case irc.RPL_TOPIC:
-		p.server.session.channels[msg.Params[1]].topic = msg.Params[2]
-		if p.sendClient(msg) != nil {
-			p.client.session.channels[msg.Params[1]].topic = msg.Params[2]
-		}
+
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
 		// of things that can come through, and we want to make sure nothing is
@@ -656,6 +677,7 @@ func (p *Proxy) replayLog(channelName string) {
 			}
 		} else if err == io.EOF {
 			p.logger.Debugf("Done replaying log for %q.", channelName)
+			// TODO: update server's initialUsers to match client.
 			chLog.Clear()
 			return
 		} else {
