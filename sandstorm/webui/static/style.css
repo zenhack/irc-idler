@@ -1,0 +1,15 @@
+section {
+	max-width: 72rem;
+	margin: 0 auto;
+	margin-bottom: 1rem;
+}
+
+h1 {
+	font-size: 2rem;
+	margin-top: 1rem;
+	margin-bottom: 1rem;
+}
+
+#host, #port {
+	width: 100%;
+}

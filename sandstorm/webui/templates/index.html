@@ -3,6 +3,8 @@
 	<!-- TODO: TLS checkbox, maybe make this less bare-bones. -->
 	<head>
 		<title>IRC Idler - Settings</title>
+		<link rel="stylesheet" href="/static/writ.css" />
+		<link rel="stylesheet" href="/static/style.css" />
 		{{ if .HaveNetwork -}}
 		<script src="/static/offer_iframe.js"></script>
 		{{ else -}}
@@ -10,35 +12,48 @@
 		{{- end }}
 	</head>
 	<body>
-		<form action="/proxy-settings" method="post">
-			<div>
-				<label for="host">Host:</label>
-				<input type="text" id="host" name="Config.Host" value="{{ .Form.Config.Host }}" />
-			</div>
-			<div>
-				<label for="port">Port:</label>
-				<input type="text" id="port" name="Config.Port" {{ if ne .Form.Config.Port 0 -}}
-					value="{{ .Form.Config.Port }}"
-				{{- end }} />
-			</div>
-			<div>
-				<label for="tls">Use TLS? </label>
-				<input type="checkbox" id="tls" name="Config.TLS" {{ if .Form.Config.TLS -}}
-					checked="true"
-				{{- end }} />
-			</div>
-			<div>
-				<button type="submit">Apply</button>
-				<input type="hidden" name="XSRFToken" value="{{ .Form.XSRFToken }}" />
-			</div>
-		</form>
+		<section>
+			<h1>Server Settings</h1>
+			<form action="/proxy-settings" method="post">
+				<div>
+					<label for="host">Host:</label>
+					<input type="text" id="host" name="Config.Host" value="{{ .Form.Config.Host }}" />
+				</div>
+				<div>
+					<label for="port">Port:</label>
+					<input type="number" id="port" name="Config.Port" {{ if ne .Form.Config.Port 0 -}}
+						value="{{ .Form.Config.Port }}"
+					{{- end }} />
+				</div>
+				<div>
+					<label for="tls">Use TLS? </label>
+					<input type="checkbox" id="tls" name="Config.TLS" {{ if .Form.Config.TLS -}}
+						checked="true"
+					{{- end }} />
+				</div>
+				<div>
+					<button type="submit">Apply</button>
+					<input type="hidden" name="XSRFToken" value="{{ .Form.XSRFToken }}" />
+				</div>
+			</form>
+		</section>
 		{{- if .HaveNetwork }}
-		<p>You can connect to IRC-Idler via this websocket:</p>
-		<iframe id="offer-iframe"
-			style="width: 100%; height: 55px; margin: 0; border: 0;"></iframe>
+		<section>
+			<h1>Network Access</h1>
+			<p>IRC Idler has network access.</p>
+		</section>
+		<section>
+			<h1>Connecting</h1>
+			<p>You can connect to IRC-Idler via this websocket:</p>
+			<iframe id="offer-iframe"
+				style="width: 100%; height: 55px; margin: 0; border: 0;"></iframe>
+		</section>
 		{{ else -}}
-		<p>IRC-Idler does not have network access.</p>
-		<button id="request_cap">Request Network Access</button>
+		<section>
+			<h1>Network Access</h1>
+			<p>IRC-Idler does not have network access.</p>
+			<button id="request_cap">Request Network Access</button>
+		</section>
 		{{ end -}}
 	</body>
 </html>
