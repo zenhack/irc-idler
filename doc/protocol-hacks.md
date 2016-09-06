@@ -3,7 +3,8 @@ behavior of software out in the wild sometimes differs, and the RFC is a
 valiant, but not always successful attempt at documenting that behavior.
 This document indexes the various workarounds we've had to implement in
 order to deal with other software that doesn't follow the spec
-perfectly.
+perfectly, as well as just general inconsistencies and how we deal with
+them.
 
 # USER/NICK ordering.
 
@@ -28,3 +29,8 @@ Which leads one to believe that a client identifier is
 `<nick>` portion. We're flexible with what we accept here.
 
 [rfc]: https://www.rfc-editor.org/rfc/rfc2812.txt
+
+# RPL_NAM{,E}REPLY
+
+The spec refers to the numeric reply code 353 by two different names
+RPL_NAMREPLY and RPL_NAMEREPLY. We use the latter.
