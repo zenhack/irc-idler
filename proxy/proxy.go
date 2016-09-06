@@ -172,6 +172,21 @@ func (s *session) IsMe(prefix string) bool {
 	return clientID.Nick == s.ClientID.Nick
 }
 
+func (s *session) HaveChannel(channelName string) bool {
+	_, ok := s.channels[channelName]
+	return ok
+}
+
+func (s *session) GetChannel(channelName string) *channelState {
+	if !s.HaveChannel(channelName) {
+		s.channels[channelName] = &channelState{
+			topic:        "",
+			initialUsers: make(map[string]bool),
+		}
+	}
+	return s.channels[channelName]
+}
+
 // Tear down the connection. If it is not currently active, this is a noop.
 func (c *connection) shutdown() {
 	if c == nil || c.ReadWriteCloser == nil || c.Chan == nil {
@@ -414,9 +429,8 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		p.dropClient()
 	case "JOIN":
 		channelName := msg.Params[0]
-		serverState, joinedOnServer := p.server.session.channels[channelName]
-		if joinedOnServer {
-			p.rejoinChannel(channelName, serverState)
+		if p.server.session.HaveChannel(channelName) {
+			p.rejoinChannel(channelName, p.server.session.GetChannel(channelName))
 		} else {
 			p.sendServer(msg)
 		}
@@ -556,6 +570,15 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
 	case irc.RPL_TOPIC:
 		channelName, topic := msg.Params[1], msg.Params[2]
+		if !p.server.session.HaveChannel(channelName) {
+			// Something weird is going on; the server shouldn't be
+			// sending us one of these for a channel we're not in.
+			p.logger.Warnln(
+				"Server sent RPL_TOPIC for a channel we're not in: %q",
+				msg,
+			)
+			return
+		}
 		p.server.session.channels[channelName].topic = topic
 		clientState := p.server.session.channels[channelName]
 		if clientState != nil && p.sendClient(msg) != nil {
