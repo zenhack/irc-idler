@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
+	netproxy "golang.org/x/net/proxy"
 	"io"
 	"io/ioutil"
+	"zenhack.net/go/irc-idler/internal/netextra"
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/proxy"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
@@ -137,10 +139,15 @@ func main() {
 			daemon = nil
 		}
 		daemonClientConns = make(chan irc.ReadWriteCloser)
+		var dialer netproxy.Dialer
+		dialer = &ip.IpNetworkDialer{ctx, *ipNetwork}
+		if serverConfig.TLS {
+			dialer = &netextra.TLSDialer{dialer}
+		}
 		daemon = proxy.NewProxy(
 			daemonClientConns,
 			&proxy.DialerConnector{
-				Dialer:  &ip.IpNetworkDialer{ctx, *ipNetwork},
+				Dialer:  dialer,
 				Network: "tcp",
 				Addr:    serverConfig.String(),
 			},

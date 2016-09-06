@@ -22,6 +22,12 @@
 				{{- end }} />
 			</div>
 			<div>
+				<label for="tls">Use TLS? </label>
+				<input type="checkbox" id="tls" name="tls" {{ if .Form.TLS -}}
+					checked="true"
+				{{- end }} />
+			</div>
+			<div>
 				<button type="submit">Apply</button>
 				<input type="hidden" name="_xsrf_token" value="{{ .Form.XSRFToken }}" />
 			</div>

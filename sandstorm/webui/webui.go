@@ -35,6 +35,7 @@ var (
 type ServerConfig struct {
 	Host string
 	Port uint16
+	TLS  bool
 }
 
 func (s *ServerConfig) String() string {
@@ -51,6 +52,7 @@ type Backend struct {
 type SettingsForm struct {
 	Host      string `schema:"host"`
 	Port      uint16 `schema:"port"`
+	TLS       bool   `schema:"tls"`
 	XSRFToken string `schema:"_xsrf_token"`
 }
 
@@ -136,6 +138,7 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 			v.Backend.SetServerConfig <- ServerConfig{
 				Host: form.Host,
 				Port: form.Port,
+				TLS:  form.TLS,
 			}
 			http.Redirect(w, req, "/", http.StatusSeeOther)
 		})
