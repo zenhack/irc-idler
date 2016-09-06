@@ -206,7 +206,7 @@ func (p *Proxy) serve() {
 				p.logger.Debugln("Connecting to server...")
 				serverConn, err := p.serverConnector.Connect()
 				if err != nil {
-					p.logger.Debugln("Server connection failed.")
+					p.logger.Debugln("Server connection failed:", err)
 					// Server connection failed. Boot the client and let
 					// them deal with it:
 					p.client.shutdown()
