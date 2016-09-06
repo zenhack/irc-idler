@@ -1,13 +1,13 @@
 package main
 
 import (
-	"crypto/tls"
 	"flag"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"golang.org/x/net/proxy"
 	"net"
 	"os"
+	"zenhack.net/go/irc-idler/internal/netextra"
 	"zenhack.net/go/irc-idler/irc"
 	ircproxy "zenhack.net/go/irc-idler/proxy"
 )
@@ -20,12 +20,6 @@ var (
 	// TODO: default should probably be `true`.
 	useTLS = flag.Bool("tls", false, "Connect via tls.")
 )
-
-type TLSDialer tls.Config
-
-func (cfg *TLSDialer) Dial(network, addr string) (net.Conn, error) {
-	return tls.Dial(network, addr, (*tls.Config)(cfg))
-}
 
 func checkFatal(err error) {
 	if err != nil {
@@ -53,11 +47,10 @@ func main() {
 
 	var dialer proxy.Dialer
 	if *useTLS {
-		dialer = (*TLSDialer)(nil)
+		dialer = &netextra.TLSDialer{proxy.Direct}
 	} else {
 		dialer = proxy.Direct
 	}
-
 	l, err := net.Listen("tcp", *laddr)
 	if err != nil {
 		logger.Fatal(err)
