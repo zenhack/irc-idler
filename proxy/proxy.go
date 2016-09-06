@@ -476,21 +476,19 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			p.client.Session.GetChannel(channelName).Topic = topic
 		}
 	case irc.RPL_NAMEREPLY:
-		mode := msg.Params[1]
+		// TODO: store this in the state:
+		// mode := msg.Params[1]
 		channelName := msg.Params[2]
 		nicks := strings.Split(msg.Params[3], " ")
 
-		for _, nick := range nicks {
-			nick = strings.Trim(nick, " \r\n")
-			p.server.Session.GetChannel(channelName).InitialUsers[nick] = true
+		if p.sendClient(msg) == nil {
 
-			// As far as the actual client's state is concerned, we could just send
-			// msg itself, once, but this makes the control flow a bit easier.
-			if p.sendClient(&irc.Message{
-				Command: irc.RPL_NAMEREPLY,
-				Params:  []string{msg.Params[0], mode, channelName, nick},
-			}) == nil {
-				p.client.Session.GetChannel(channelName).InitialUsers[nick] = true
+			serverState := p.server.Session.GetChannel(channelName)
+			clientState := p.client.Session.GetChannel(channelName)
+			for _, nick := range nicks {
+				nick = strings.Trim(nick, " \r\n")
+				serverState.InitialUsers[nick] = true
+				clientState.InitialUsers[nick] = true
 			}
 		}
 
