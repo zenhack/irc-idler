@@ -358,19 +358,24 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelSt
 
 	clientState := p.client.Session.GetChannel(channelName)
 
+	myNick := p.server.Session.ClientID.Nick
 	for nick, _ := range serverState.InitialUsers {
 		rplNamreply := &irc.Message{
 			Command: irc.RPL_NAMEREPLY,
 			// FIXME: The "=" denotes a public channel. at some point
 			// we should actually check this.
-			Params: []string{p.server.Session.ClientID.Nick, "=", channelName, nick},
+			Params: []string{myNick, "=", channelName, nick},
 		}
 		if p.sendClient(rplNamreply) != nil {
 			return
 		}
 		clientState.InitialUsers[nick] = true
 	}
-	p.replayLog(channelName)
+	if p.sendClient(&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
+		myNick, channelName, "End of NAMES list",
+	}}) == nil {
+		p.replayLog(channelName)
+	}
 }
 
 func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {

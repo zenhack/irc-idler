@@ -16,18 +16,19 @@ func (me *MessageError) String() string {
 }
 
 var minParams = map[string]int{
-	"PASS":        1,
-	"PRIVMSG":     2,
-	"NOTICE":      2,
-	"JOIN":        1,
-	"NICK":        1,
-	"USER":        4,
-	RPL_WELCOME:   2,
-	RPL_YOURHOST:  2,
-	RPL_CREATED:   2,
-	RPL_MYINFO:    5,
-	RPL_TOPIC:     3,
-	RPL_NAMEREPLY: 4,
+	"PASS":         1,
+	"PRIVMSG":      2,
+	"NOTICE":       2,
+	"JOIN":         1,
+	"NICK":         1,
+	"USER":         4,
+	RPL_WELCOME:    2,
+	RPL_YOURHOST:   2,
+	RPL_CREATED:    2,
+	RPL_MYINFO:     5,
+	RPL_TOPIC:      3,
+	RPL_NAMEREPLY:  4,
+	RPL_ENDOFNAMES: 3,
 }
 
 // Validate the message m. This performs various checks:
