@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
+	"zenhack.net/go/irc-idler/proxy/internal/session"
 	"zenhack.net/go/irc-idler/storage"
 	"zenhack.net/go/irc-idler/storage/ephemeral"
 
@@ -69,122 +70,13 @@ type Proxy struct {
 type connection struct {
 	irc.ReadWriteCloser
 	Chan <-chan *irc.Message
-	session
+	*session.Session
 }
 
-// State of the initial handshake; this is complete when all three
-// variables are true.
-type handshakeState struct {
-	haveNick, haveUser bool // The client has sent the NICK/USER mesage.
-
-	// The client has received the full MOTD; this is the last thing the
-	// server sends as part of the initial welcome sequence.
-	haveMOTD bool
-}
-
-// Return true if the handshake is complete, false otherwise.
-func (h handshakeState) Done() bool {
-	return h.haveNick && h.haveUser && h.haveMOTD
-}
-
-// Return true if the handshake is complete on the client side, but still
-// waiting for (some of) the server's welcome sequence.
-func (h handshakeState) WantsWelcome() bool {
-	return h.haveNick && h.haveUser && !h.haveMOTD
-}
-
-// Update the state to be consistent with `msg` having just been transferred.
-// Note that we don't have to specify whether this is the state for the
-// client or server, or whether the message was sent or received, because
-// the way the handshake works, these things are unambiguous from the message
-// itself.
-//
-// Note that it is *not* safe to call this regardless of whether the handshake
-// is already complete.
-func (h *handshakeState) Update(msg *irc.Message) {
-	switch msg.Command {
-	case "USER":
-		h.haveUser = true
-	case "NICK":
-		h.haveNick = true
-	case irc.ERR_NONICKNAMEGIVEN, irc.ERR_ERRONEUSNICKNAME, irc.ERR_NICKNAMEINUSE,
-		irc.ERR_NICKCOLLISION:
-		// Server rejected our NICK message, we'll need to send another before
-		// we're done.
-		h.haveNick = false
-	case irc.RPL_ENDOFMOTD, irc.ERR_NOMOTD:
-		h.haveMOTD = true
+func emptyConnection() *connection {
+	return &connection{
+		Session: session.NewSession(),
 	}
-}
-
-type channelState struct {
-	topic string // the topic for the channel, if any.
-
-	// Initial users in the channel. If the client is connected, this is
-	// modified as users enter and leave the channel, but if the client
-	// is disconnected, this is left unchanged. In this case we save
-	// JOIN/PART messages to the log, and update this as we replay them.
-	// This is important since it avoids the log e.g. conveying a PRIVMSG
-	// for a user who is not in the channel, which might confuse the client.
-	// putting these users in RPL_NAMREPLY and then replaying the log
-	// should get us to the correct final state.
-	initialUsers map[string]bool
-}
-
-func (s *channelState) update(msg *irc.Message) {
-	// TODO: report the errors from ParseClientID somehow.
-	switch msg.Command {
-	case "JOIN":
-		clientID, err := irc.ParseClientID(msg.Prefix)
-		if err != nil {
-			return
-		}
-		s.initialUsers[clientID.Nick] = true
-	case "PART", "KICK", "QUIT":
-		// TODO: we need to specially handle the case were *we* are leaving.
-		clientID, err := irc.ParseClientID(msg.Prefix)
-		if err != nil {
-			return
-		}
-		delete(s.initialUsers, clientID.Nick)
-	}
-}
-
-// Information about the state of the connection. Note that we store one of these
-// indepentently for both client and server; their views may not always align.
-type session struct {
-	irc.ClientID
-
-	handshake handshakeState
-
-	channels map[string]*channelState // State of channels we're in.
-}
-
-// Return true if the prefix identifies the user associated with this session,
-// false otherwise.
-func (s *session) IsMe(prefix string) bool {
-	clientID, err := irc.ParseClientID(prefix)
-	if err != nil {
-		// TODO: debug logging here. Control flow makes it a bit hard.
-		// We should probably start using contexts.
-		return false
-	}
-	return clientID.Nick == s.ClientID.Nick
-}
-
-func (s *session) HaveChannel(channelName string) bool {
-	_, ok := s.channels[channelName]
-	return ok
-}
-
-func (s *session) GetChannel(channelName string) *channelState {
-	if !s.HaveChannel(channelName) {
-		s.channels[channelName] = &channelState{
-			topic:        "",
-			initialUsers: make(map[string]bool),
-		}
-	}
-	return s.channels[channelName]
 }
 
 // Tear down the connection. If it is not currently active, this is a noop.
@@ -199,7 +91,7 @@ func (c *connection) shutdown() {
 		_, ok = <-c.Chan
 	}
 
-	*c = connection{}
+	*c = *emptyConnection()
 }
 
 // Create a new proxy.
@@ -219,8 +111,8 @@ func NewProxy(clientConns <-chan irc.ReadWriteCloser, serverConnector Connector,
 	return &Proxy{
 		clientConns:     clientConns,
 		serverConnector: serverConnector,
-		client:          &connection{},
-		server:          &connection{},
+		client:          emptyConnection(),
+		server:          emptyConnection(),
 		logger:          logger,
 		messagelogs:     ephemeral.NewStore(),
 		stop:            make(chan struct{}),
@@ -238,7 +130,7 @@ func (p *Proxy) Stop() {
 func (c *connection) setup(conn irc.ReadWriteCloser) {
 	c.ReadWriteCloser = conn
 	c.Chan = irc.ReadAll(conn)
-	c.session.channels = make(map[string]*channelState)
+	c.Session = session.NewSession()
 }
 
 func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *log.Logger) {
@@ -264,8 +156,8 @@ func (p *Proxy) sendServer(msg *irc.Message) error {
 	if err != nil {
 		p.logger.Errorf("sendServer(): error: %v.\n", err)
 		p.reset()
-	} else if !p.server.handshake.Done() {
-		p.server.handshake.Update(msg)
+	} else if !p.server.Handshake.Done() {
+		p.server.Handshake.Update(msg)
 	}
 	return err
 }
@@ -280,8 +172,8 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 	if err != nil {
 		p.logger.Errorf("sendClient(): error: %v.\n", err)
 		p.dropClient()
-	} else if !p.client.handshake.Done() {
-		p.client.handshake.Update(msg)
+	} else if !p.client.Handshake.Done() {
+		p.client.Handshake.Update(msg)
 	}
 	return err
 }
@@ -309,7 +201,7 @@ func (p *Proxy) serve() {
 			p.client.setup(clientConn)
 
 			// If we're not done with the handshake, restart the server connection too.
-			if !p.server.handshake.Done() {
+			if !p.server.Handshake.Done() {
 				p.server.shutdown()
 				p.logger.Debugln("Connecting to server...")
 				serverConn, err := p.serverConnector.Connect()
@@ -335,7 +227,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 		// and USER. we're not checking this, and just forwarding to the
 		// server. Might be nice to do a bit more validation ourselves.
 
-		if !p.server.handshake.Done() {
+		if !p.server.Handshake.Done() {
 			// Client and server agree on the handshake state, so just pass
 			// the message through:
 			p.sendServer(msg)
@@ -353,7 +245,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 		// XXX: we ought to do at least a little sanity checking here. e.g.
 		// what if the client sends a nick other than what we have on file?
 
-		if p.server.handshake.Done() && p.client.handshake.WantsWelcome() {
+		if p.server.Handshake.Done() && p.client.Handshake.WantsWelcome() {
 			// Server already thinks we're done; it won't send the welcome sequence,
 			// so we need to do it ourselves.
 
@@ -366,7 +258,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 				return
 			}
 
-			clientID := p.server.session.ClientID.String()
+			clientID := p.server.Session.ClientID.String()
 			messages := []*irc.Message{
 				&irc.Message{
 					Command: irc.RPL_WELCOME,
@@ -396,7 +288,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 					return
 				}
 			}
-			p.client.session.ClientID, _ = irc.ParseClientID(clientID)
+			p.client.Session.ClientID, _ = irc.ParseClientID(clientID)
 			// Trigger a message of the day response; once that completes
 			// the client will be ready.
 			p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
@@ -417,8 +309,8 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		return
 	}
 
-	if !p.client.handshake.Done() {
-		p.client.handshake.Update(msg)
+	if !p.client.Handshake.Done() {
+		p.client.Handshake.Update(msg)
 		p.handleHandshakeMessage(msg)
 		return
 	}
@@ -429,8 +321,8 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		p.dropClient()
 	case "JOIN":
 		channelName := msg.Params[0]
-		if p.server.session.HaveChannel(channelName) {
-			p.rejoinChannel(channelName, p.server.session.GetChannel(channelName))
+		if p.server.Session.HaveChannel(channelName) {
+			p.rejoinChannel(channelName, p.server.Session.GetChannel(channelName))
 		} else {
 			p.sendServer(msg)
 		}
@@ -441,22 +333,22 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	}
 }
 
-func (p *Proxy) rejoinChannel(channelName string, serverState *channelState) {
+func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelState) {
 	joinMessage := &irc.Message{
-		Prefix:  p.client.session.ClientID.String(),
+		Prefix:  p.client.Session.ClientID.String(),
 		Command: "JOIN",
 		Params:  []string{channelName},
 	}
 	if p.sendClient(joinMessage) != nil {
 		return
 	}
-	if serverState.topic != "" {
+	if serverState.Topic != "" {
 		rplTopic := &irc.Message{
 			Command: irc.RPL_TOPIC,
 			Params: []string{
-				p.client.session.ClientID.String(),
+				p.client.Session.ClientID.String(),
 				channelName,
-				serverState.topic,
+				serverState.Topic,
 			},
 		}
 		if p.sendClient(rplTopic) != nil {
@@ -464,25 +356,20 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *channelState) {
 		}
 	}
 
-	clientState := &channelState{
-		topic:        serverState.topic,
-		initialUsers: make(map[string]bool, len(serverState.initialUsers)),
-	}
+	clientState := p.client.Session.GetChannel(channelName)
 
-	for nick, _ := range serverState.initialUsers {
+	for nick, _ := range serverState.InitialUsers {
 		rplNamreply := &irc.Message{
 			Command: irc.RPL_NAMEREPLY,
 			// FIXME: The "=" denotes a public channel. at some point
 			// we should actually check this.
-			Params: []string{p.server.session.ClientID.Nick, "=", channelName, nick},
+			Params: []string{p.server.Session.ClientID.Nick, "=", channelName, nick},
 		}
 		if p.sendClient(rplNamreply) != nil {
 			return
 		}
-		clientState.initialUsers[nick] = true
+		clientState.InitialUsers[nick] = true
 	}
-
-	p.client.session.channels[channelName] = clientState
 	p.replayLog(channelName)
 }
 
@@ -503,8 +390,8 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		return
 	}
 
-	if !p.server.handshake.Done() {
-		p.server.handshake.Update(msg)
+	if !p.server.Handshake.Done() {
+		p.server.Handshake.Update(msg)
 	}
 
 	switch msg.Command {
@@ -548,9 +435,9 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			return
 		}
 
-		p.server.session.ClientID = clientID
+		p.server.Session.ClientID = clientID
 		if p.sendClient(msg) == nil {
-			p.client.session.ClientID = clientID
+			p.client.Session.ClientID = clientID
 		}
 
 	// We can mostly just pass these through to the client and it will do the right
@@ -570,7 +457,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
 	case irc.RPL_TOPIC:
 		channelName, topic := msg.Params[1], msg.Params[2]
-		if !p.server.session.HaveChannel(channelName) {
+		if !p.server.Session.HaveChannel(channelName) {
 			// Something weird is going on; the server shouldn't be
 			// sending us one of these for a channel we're not in.
 			p.logger.Warnln(
@@ -579,10 +466,9 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			)
 			return
 		}
-		p.server.session.channels[channelName].topic = topic
-		clientState := p.server.session.channels[channelName]
-		if clientState != nil && p.sendClient(msg) != nil {
-			clientState.topic = topic
+		p.server.Session.GetChannel(channelName).Topic = topic
+		if p.client.Session.HaveChannel(channelName) && p.sendClient(msg) != nil {
+			p.client.Session.GetChannel(channelName).Topic = topic
 		}
 	case irc.RPL_NAMEREPLY:
 		mode := msg.Params[1]
@@ -591,7 +477,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 
 		for _, nick := range nicks {
 			nick = strings.Trim(nick, " \r\n")
-			p.server.session.channels[channelName].initialUsers[nick] = true
+			p.server.Session.GetChannel(channelName).InitialUsers[nick] = true
 
 			// As far as the actual client's state is concerned, we could just send
 			// msg itself, once, but this makes the control flow a bit easier.
@@ -599,7 +485,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 				Command: irc.RPL_NAMEREPLY,
 				Params:  []string{msg.Params[0], mode, channelName, nick},
 			}) == nil {
-				p.client.session.channels[channelName].initialUsers[nick] = true
+				p.client.Session.GetChannel(channelName).InitialUsers[nick] = true
 			}
 		}
 
@@ -608,12 +494,10 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// If we're just reconnecting, this is the appropriate point to send
 		// buffered messages addressed directly to us. If not, that log should
 		// be empty anyway:
-		p.replayLog(p.client.session.ClientID.Nick)
+		p.replayLog(p.client.Session.ClientID.Nick)
 	case "PRIVMSG", "NOTICE":
 		targetName := msg.Params[0]
-		_, inChannel := p.client.session.channels[targetName]
-		if inChannel || p.client.session.IsMe(targetName) {
-
+		if p.client.Session.HaveChannel(targetName) || p.client.Session.IsMe(targetName) {
 			if p.sendClient(msg) != nil {
 				p.logMessage(msg)
 			}
@@ -621,33 +505,16 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			p.logMessage(msg)
 		}
 	case "JOIN", "KICK", "PART", "QUIT":
-		// Set our presence for the channel according to the message; if it's not
-		// about us, nothing changes. otherwise, for a JOIN message we mark
-		// ourselves present, and otherwise we mark ourselves absent.
-		setPresence := func(m map[string]*channelState) {
-			if !p.server.session.IsMe(msg.Prefix) {
-				return
-			}
-			if msg.Command == "JOIN" {
-				m[msg.Params[0]] = &channelState{
-					initialUsers: map[string]bool{
-						p.server.session.ClientID.Nick: true,
-					},
-				}
-			} else {
-				delete(m, msg.Params[0])
-			}
-		}
-		setPresence(p.server.session.channels)
+		p.server.Session.Update(msg)
 
 		p.logger.Debugf("Got %s message for channel %q.", msg.Command, msg.Params[0])
 
-		if !p.client.handshake.Done() || p.sendClient(msg) != nil {
+		if !p.client.Handshake.Done() || p.sendClient(msg) != nil {
 			// Can't send the message to the client, so log it.
 			p.logMessage(msg)
 		} else {
 			// client knows about the change; update their state.
-			setPresence(p.client.session.channels)
+			p.client.Session.Update(msg)
 		}
 
 	default:
@@ -664,7 +531,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 func (p *Proxy) dropClient() {
 	p.logger.Debugln("dropClient(): dropping client connection.")
 	p.client.shutdown()
-	if !p.server.handshake.Done() {
+	if !p.server.Handshake.Done() {
 		p.logger.Debugln("dropClient(): handshake incomplete; dropping server connection.")
 		p.server.shutdown()
 	}
@@ -712,7 +579,7 @@ func (p *Proxy) replayLog(channelName string) {
 			)
 			return
 		}
-		p.client.session.channels[channelName].update(msg)
+		p.client.Session.GetChannel(channelName).Update(msg)
 		cursor.Next()
 	}
 }
