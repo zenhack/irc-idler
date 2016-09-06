@@ -50,10 +50,8 @@ type Backend struct {
 }
 
 type SettingsForm struct {
-	Host      string `schema:"host"`
-	Port      uint16 `schema:"port"`
-	TLS       bool   `schema:"tls"`
-	XSRFToken string `schema:"_xsrf_token"`
+	Config    ServerConfig
+	XSRFToken string
 }
 
 type templateContext struct {
@@ -70,7 +68,7 @@ func (form *SettingsForm) Validate(xsrfKey string) error {
 	if !xsrftoken.Valid(form.XSRFToken, xsrfKey, "TODO", "/proxy-settings") {
 		return badXSRFToken
 	}
-	if form.Port == 0 {
+	if form.Config.Port == 0 {
 		return illegalPortNumber
 	}
 	return nil
@@ -107,12 +105,10 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				"TODO",
 				"/proxy-settings",
 			)
-			serverConfig := <-v.Backend.GetServerConfig
 			indexTpl.Execute(w, &templateContext{
 				HaveNetwork: <-v.Backend.HaveNetwork,
 				Form: &SettingsForm{
-					Host:      serverConfig.Host,
-					Port:      serverConfig.Port,
+					Config:    <-v.Backend.GetServerConfig,
 					XSRFToken: token,
 				},
 			})
@@ -135,11 +131,7 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				w.Write([]byte(err.Error()))
 				return
 			}
-			v.Backend.SetServerConfig <- ServerConfig{
-				Host: form.Host,
-				Port: form.Port,
-				TLS:  form.TLS,
-			}
+			v.Backend.SetServerConfig <- form.Config
 			http.Redirect(w, req, "/", http.StatusSeeOther)
 		})
 

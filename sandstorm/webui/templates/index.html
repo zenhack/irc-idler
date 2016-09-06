@@ -13,23 +13,23 @@
 		<form action="/proxy-settings" method="post">
 			<div>
 				<label for="host">Host:</label>
-				<input type="text" id="host" name="host" value="{{ .Form.Host }}" />
+				<input type="text" id="host" name="Config.Host" value="{{ .Form.Config.Host }}" />
 			</div>
 			<div>
 				<label for="port">Port:</label>
-				<input type="text" id="port" name="port" {{ if ne .Form.Port 0 -}}
-					value="{{ .Form.Port }}"
+				<input type="text" id="port" name="Config.Port" {{ if ne .Form.Config.Port 0 -}}
+					value="{{ .Form.Config.Port }}"
 				{{- end }} />
 			</div>
 			<div>
 				<label for="tls">Use TLS? </label>
-				<input type="checkbox" id="tls" name="tls" {{ if .Form.TLS -}}
+				<input type="checkbox" id="tls" name="Config.TLS" {{ if .Form.Config.TLS -}}
 					checked="true"
 				{{- end }} />
 			</div>
 			<div>
 				<button type="submit">Apply</button>
-				<input type="hidden" name="_xsrf_token" value="{{ .Form.XSRFToken }}" />
+				<input type="hidden" name="XSRFToken" value="{{ .Form.XSRFToken }}" />
 			</div>
 		</form>
 		{{- if .HaveNetwork }}
