@@ -22,6 +22,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 	"io"
+	"os"
 	"testing"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
@@ -31,7 +32,28 @@ var (
 	Timeout              = errors.New("Timeout")
 	UnexpectedDisconnect = errors.New("Unexpected Disconnect")
 	ExpectedDisconnect   = errors.New("Expected Disconnect")
+
+	// The timeout passed to each Expect() call. This can be overriden
+	// by setting the variable II_TEST_TIMEOUT to a string that can be
+	// parsed by time.ParseDuration
+	//
+	// This is useful for e.g. single stepping in a debugger, as
+	// otherwise the timeout prevents inspecting things.
+	TimeoutLength = time.Second
 )
+
+func init() {
+	durationEnv := os.Getenv("II_TEST_TIMEOUT")
+	if durationEnv == "" {
+		return
+	}
+	duration, err := time.ParseDuration(durationEnv)
+	if err != nil {
+		panic(err)
+	}
+	TimeoutLength = duration
+
+}
 
 type ChanRWC struct {
 	Send chan<- *irc.Message
@@ -321,7 +343,7 @@ func StartTestProxy() *ProxyState {
 
 func TraceTest(t *testing.T, action ProxyAction) {
 	state := StartTestProxy()
-	err := action.Expect(state, time.Second)
+	err := action.Expect(state, TimeoutLength)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -101,11 +101,25 @@ func TestBasicReconnect(t *testing.T) {
 }
 
 func TestChannelRejoinNoBackLog(t *testing.T) {
+	joinSeq := []*irc.Message{
+		&irc.Message{Prefix: "alice", Command: "JOIN", Params: []string{"#sandstorm"}},
+		&irc.Message{Command: irc.RPL_TOPIC, Params: []string{
+			"alice", "#sandstorm", "Welcome to #sandstorm!",
+		}},
+		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+			"=", "#sandstorm", "alice",
+		}},
+		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+			"=", "#sandstorm", "bob",
+		}},
+	}
 	TraceTest(t, ExpectMany{
 		initialConnect,
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		ForwardS2C(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		// TODO: complete this. should replay topic and list members, then we
-		// should disconnect, reconnect, and get the same thing.
+		ManyMsg(ForwardS2C, joinSeq),
+		ClientDisconnect{},
+		reconnect,
+		&FromClient{Command: "JOIN", Params: []string{"#sandstorm"}},
+		ManyToClient(joinSeq),
 	})
 }
