@@ -460,7 +460,7 @@ func (p *Proxy) rejoinChannel(channelName string, serverState channelState) {
 
 	for nick, _ := range serverState.initialUsers {
 		rplNamreply := &irc.Message{
-			Command: irc.RPL_NAMREPLY,
+			Command: irc.RPL_NAMEREPLY,
 			Params:  []string{channelName, nick},
 		}
 		if p.sendClient(rplNamreply) != nil {

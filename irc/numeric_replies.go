@@ -99,7 +99,7 @@ const (
 	RPL_ENDOFEXCEPTLIST = "349"
 	RPL_VERSION         = "351"
 	RPL_WHOREPLY        = "352"
-	RPL_NAMREPLY        = "353"
+	RPL_NAMEREPLY       = "353"
 	RPL_KILLDONE        = "361"
 	RPL_CLOSING         = "362"
 	RPL_CLOSEEND        = "363"
