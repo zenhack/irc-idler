@@ -78,7 +78,7 @@ set up a new network:
   can get a traditional IRC client to connect to this by using
   [websocket-proxy][2]:
 
-    websocket-proxy -listen :6000 -url ${websocket_url}
+      websocket-proxy -listen :6000 -url ${websocket_url}
 
 ...and then pointing your IRC client at localhost port 6000.
 
