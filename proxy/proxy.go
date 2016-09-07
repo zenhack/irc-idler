@@ -507,10 +507,8 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		} else {
 			p.logMessage(msg)
 		}
-	case "JOIN", "KICK", "PART", "QUIT":
+	case "JOIN", "KICK", "PART", "QUIT", "NICK":
 		p.server.Session.Update(msg)
-
-		p.logger.Debugf("Got %s message for channel %q.", msg.Command, msg.Params[0])
 
 		if !p.client.Handshake.Done() || p.sendClient(msg) != nil {
 			// Can't send the message to the client, so log it.
@@ -519,7 +517,6 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			// client knows about the change; update their state.
 			p.client.Session.Update(msg)
 		}
-
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
 		// of things that can come through, and we want to make sure nothing is

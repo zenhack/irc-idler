@@ -52,18 +52,25 @@ func (s *Session) GetChannel(channelName string) *ChannelState {
 }
 
 func (s *Session) Update(msg *irc.Message) {
-	channelName := msg.Params[0]
-	if !s.IsMe(msg.Prefix) || msg.Command == "JOIN" {
-		// If the message isn't about us, then it's some other user in
-		// the channel; update the state of that channel.
-		//
-		// Otherwise, if this is a join, then we want to join the
-		// channel the same code does this:
-		s.GetChannel(channelName).Update(msg)
-		return
+	if s.IsMe(msg.Prefix) {
+		// The message is about us:
+		switch msg.Command {
+		case "KICK", "PART":
+			// we left a channel
+			delete(s.channels, msg.Params[0])
+		case "JOIN":
+			// we entered a channel
+			s.GetChannel(msg.Params[0]).Update(msg)
+		case "NICK":
+			// we changed our nick
+			s.ClientID.Nick = msg.Params[0]
+		}
 	} else {
-		// One of KICK, PART... concerning ourselves:
-		delete(s.channels, channelName)
+		switch msg.Command {
+		case "KICK", "PART", "JOIN", "QUIT":
+			// Some other user's state in a channel changed.
+			s.GetChannel(msg.Params[0]).Update(msg)
+		}
 	}
 }
 
