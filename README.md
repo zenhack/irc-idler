@@ -1,6 +1,6 @@
-![Travis CI Build Status](https://api.travis-ci.org/zenhack/irc-idler.svg?branch=master)
+[![Travis CI Build Status][ci-img]][ci]
 
-IRC idler is a program which idles in IRC for you. [sandstorm][1] will
+IRC Idler is a program which idles in IRC for you. [Sandstorm][1] will
 be the preferred way of running it, though it will work in traditional
 environments as well.
 
@@ -9,22 +9,23 @@ sandstorm version, but it's not exactly polished.
 
 # Why
 
-Lot's of folks prefer to be persistently online on IRC. A common
+Lots of folks prefer to be persistently online on IRC. A common
 solution to this is to be logged in via a console IRC client on a server
 somewhere, running in tmux or GNU screen. This works, but is less than
 ideal.
 
 # What
 
-IRC idler connects to the IRC server for you, and then acts as an IRC
-server itself -- you connect to IRC idler, and it proxies the
+IRC Idler connects to the IRC server for you, and then acts as an IRC
+server itself -- you connect to IRC Idler, and it proxies the
 connection. When you disconnect, it stays connected, and flags you as
-away until you reconnect.
+away until you reconnect, at which point it replays an messages you
+missed while you were gone.
 
 ## Sandstorm Design Notes
 
 IRC isn't a web-app so building a sandstorm app that offers it is
-slightly more complicated. We'd like to still leverage sandstorm for
+slightly more complicated. We still want leverage sandstorm for
 authentication and authorization. We do this by listening on a websocket
 instead of a raw TCP port, and have users use [websocket-proxy][2] to
 connect. This scheme also translates decently to the non-sandstorm case.
@@ -53,7 +54,7 @@ The reasons for this are twofold:
    then.
 
 The script `./run-spk-dev.sh` will recompile the sandstorm app and then
-run vagrant-spk dev.
+run `vagrant-spk dev`.
 
 # Using (sandstorm)
 
@@ -66,10 +67,11 @@ set up a new network:
 
 * Create a new IRC Idler grain
 * Fill out the settings for the IRC server on IRC Idler's web
-  interface. For example, to connect to freenode, you would supply Host:
-  irc.freenode.net and Port: 6667. Note that TLS is not currently
-  supported for the sandstorm version, but this is in the pipeline (and
-  will not be difficult).
+  interface. For example, to connect to freenode, you would supply:
+  * Host: irc.freenode.net
+  * Port: 6667 for unencrypted, 6697 for TLS
+  * Check the TLS box or not, depending on whether you want to use it
+    (recommended).
 * Click on the "Request Network Access" button, and grant network access
   in the dialog that sandstorm presents
 * You will be presented with a websocket URL you can use to connect. You
@@ -78,7 +80,7 @@ set up a new network:
 
     websocket-proxy -listen :6000 -url ${websocket_url}
 
-  ...and then pointing your IRC client at localhost port 6000.
+...and then pointing your IRC client at localhost port 6000.
 
 # Using (non-sandstorm)
 
@@ -121,3 +123,5 @@ available for the non-sandstorm version as well.
 [1]: https://sandstorm.io
 [2]: https://github.com/zenhack/websocket-proxy
 [3]: https://github.com/zenhack/go.sandstorm
+[ci-img]: https://api.travis-ci.org/zenhack/irc-idler.svg?branch=master
+[ci]: https://travis-ci.org/zenhack/irc-idler
