@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -9,7 +10,8 @@ import (
 )
 
 var (
-	raddr = flag.String("raddr", ":6667", "Remote address to connect to")
+	raddr = flag.String("raddr", "", "Remote address to connect to")
+	laddr = flag.String("laddr", "", "Local address to listen on")
 )
 
 func checkFatal(err error) {
@@ -19,32 +21,68 @@ func checkFatal(err error) {
 	}
 }
 
-func main() {
-	flag.Parse()
+func pingPong(rw irc.ReadWriter, w irc.Writer) {
+	for {
+		msg, err := rw.ReadMessage()
+		checkFatal(err)
+		if msg.Command == "PING" {
+			msg.Command = "PONG"
+			checkFatal(rw.WriteMessage(msg))
+		} else {
+			checkFatal(w.WriteMessage(msg))
+		}
+	}
+}
 
-	conn, err := net.Dial("tcp", *raddr)
-	checkFatal(err)
+func dumbCopy(r irc.Reader, w irc.Writer) {
+	for {
+		msg, err := r.ReadMessage()
+		checkFatal(err)
+		checkFatal(w.WriteMessage(msg))
+	}
+}
 
-	server := irc.NewReadWriteCloser(conn)
+func mainLoop(conn net.Conn) {
+	peer := irc.NewReadWriteCloser(conn)
 	stdin := irc.NewReader(os.Stdin)
 	stdout := irc.NewWriter(os.Stdout)
 
-	go func() {
-		for {
-			msg, err := server.ReadMessage()
-			checkFatal(err)
-			if msg.Command == "PING" {
-				msg.Command = "PONG"
-				checkFatal(server.WriteMessage(msg))
-			} else {
-				checkFatal(stdout.WriteMessage(msg))
-			}
-		}
-	}()
+	go pingPong(peer, stdout)
+	dumbCopy(stdin, peer)
+	conn.Close()
+}
 
+func client() {
+	conn, err := net.Dial("tcp", *raddr)
+	checkFatal(err)
+	mainLoop(conn)
+}
+
+func server() {
+	l, err := net.Listen("tcp", *laddr)
+	checkFatal(err)
 	for {
-		msg, err := stdin.ReadMessage()
-		checkFatal(err)
-		checkFatal(server.WriteMessage(msg))
+		conn, err := l.Accept()
+		if err == nil {
+			fmt.Println("Got connection")
+			mainLoop(conn)
+		} else {
+			fmt.Println("Accept failed")
+		}
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	if *raddr == "" && *laddr == "" || *raddr != "" && *laddr != "" {
+		fmt.Fprintln(os.Stderr, "You must specify exactly one of -laddr, -raddr")
+		os.Exit(1)
+	}
+
+	if *laddr == "" {
+		client()
+	} else {
+		server()
 	}
 }
