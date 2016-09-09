@@ -105,26 +105,32 @@ func (w *ioWriter) WriteMessage(m *Message) error {
 	return err
 }
 
-func (msg *Message) WriteTo(w io.Writer) (int64, error) {
-	text := ""
-	switch len(msg.Params) {
-	case 0:
-		text = msg.Command + "\r\n"
-	case 1:
-		text = fmt.Sprintf("%s :%s\r\n",
-			msg.Command,
-			msg.Params[len(msg.Params)-1])
-	default:
-		text = fmt.Sprintf("%s %s :%s\r\n",
-			msg.Command,
-			strings.Join(msg.Params[:len(msg.Params)-1], " "),
-			msg.Params[len(msg.Params)-1])
+func (msg *Message) WriteTo(w io.Writer) (n int64, err error) {
+	n = 0
+	checkErr := func(sz int, e error) {
+		if err != nil {
+			err = e
+		}
+		n += int64(sz)
 	}
 	if msg.Prefix != "" {
-		text = fmt.Sprintf(":%s %s", msg.Prefix, text)
+		checkErr(fmt.Fprintf(w, ":%s ", msg.Prefix))
 	}
-	n, err := w.Write([]byte(text))
-	return int64(n), err
+	checkErr(fmt.Fprint(w, msg.Command))
+	if len(msg.Params) != 0 {
+		lastIndex := len(msg.Params) - 1
+		for _, param := range msg.Params[:lastIndex] {
+			checkErr(fmt.Fprintf(w, " %s", param))
+		}
+		lastParam := msg.Params[lastIndex]
+		if strings.Contains(lastParam, " ") {
+			checkErr(fmt.Fprintf(w, " :%s", lastParam))
+		} else {
+			checkErr(fmt.Fprintf(w, " %s", lastParam))
+		}
+	}
+	checkErr(w.Write([]byte("\r\n")))
+	return
 }
 
 func (msg *Message) String() string {

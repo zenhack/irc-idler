@@ -14,6 +14,12 @@ var sampleMessages = []*Message{
 	&Message{Prefix: "bob", Command: "STUFF", Params: []string{"THINGS"}},
 }
 
+var sampleUnparsedMessages = []string{
+	":alice PRIVMSG ##crypto :Hey Bob!\r\n",
+	":bob PRIVMSG ##crypto :Hey!\r\n",
+	":bob PRIVMSG ##crypto Hey!\r\n",
+}
+
 // Verify that writing out msg and reading it back results in the same value.
 func checkReadBack(msg *Message) bool {
 	buf := &bytes.Buffer{}
@@ -82,6 +88,25 @@ func TestParseStringReadBack(t *testing.T) {
 
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Make sure that parsing and then re-serializing a message doesn't result in
+// a longer message. This can happen without otherwise generating an invalid
+// or semantically different message, but it is important that we don't
+// overflow the maximum message size, so we want to ensure our implementation
+// doesn't have this property
+func TestMessageDoesntGrow(t *testing.T) {
+	for _, str := range sampleUnparsedMessages {
+		msg, err := ParseMessage(str)
+		if err != nil {
+			panic(err)
+		}
+		newStr := msg.String()
+		if len(newStr) > len(str) {
+			t.Fatalf("Message %q (length %d) grew to message %q (length %d)",
+				str, len(str), newStr, len(newStr))
+		}
 	}
 }
 
