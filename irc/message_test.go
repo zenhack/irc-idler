@@ -46,6 +46,19 @@ func TestReadBack(t *testing.T) {
 	}
 }
 
+// Make sure Message.Len computes the actual length of the serialized message.
+func TestLen(t *testing.T) {
+	for _, m := range sampleMessages {
+		str := m.String()
+		expected := len(str)
+		actual := m.Len()
+		if expected != actual {
+			t.Fatalf("TestLen: Expected length %d for message %q, but got %d.",
+				expected, str, actual)
+		}
+	}
+}
+
 // Make sure ParseMessage obeys the same rules as checkReadBack is checking.
 func TestParseStringReadBack(t *testing.T) {
 	err := quick.Check(func(msg1 *Message) bool {

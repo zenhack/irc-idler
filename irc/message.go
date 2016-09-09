@@ -150,6 +150,28 @@ func (m1 *Message) Eq(m2 *Message) bool {
 	return true
 }
 
+// Return the length in bytes of the serialized form of the message.
+func (m *Message) Len() int {
+	total := 0
+	if m.Prefix != "" {
+		total += len(m.Prefix) + 2 // Leading ":" and trailing space.
+	}
+	total += len(m.Command)
+
+	// Spaces before each parameter, including the space between the
+	// command and the first parameter.
+	total += len(m.Params)
+	if len(m.Params) != 0 && strings.Contains(m.Params[len(m.Params)-1], " ") {
+		// Colon before last argument:
+		total += 1
+	}
+	for _, param := range m.Params {
+		total += len(param)
+	}
+	total += 2 // trailing \r\n
+	return total
+}
+
 // An ioReader reads Messages from an io.Reader.
 type ioReader struct {
 	lock    sync.Mutex
