@@ -624,11 +624,11 @@ func (p *Proxy) replayLog(channelName string) {
 
 func (p *Proxy) logMessage(msg *irc.Message) {
 	p.logger.Debugln("logMessage(%q)\n", msg)
-	// For now we only log messages. we'll want to add to this list in
-	// the future.
+
 	switch msg.Command {
-	case "PRIVMSG", "NOTICE":
+	case "PRIVMSG", "NOTICE", "JOIN", "KICK", "PART", "QUIT", "NICK":
 	default:
+		// Don't log anything we don't specificially whitelist above.
 		return
 	}
 
