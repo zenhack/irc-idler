@@ -11,6 +11,10 @@ var (
 		ConnectServer{},
 		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
 		ForwardC2S(&irc.Message{Command: "USER", Params: []string{"alice", "0", "*", "Alice"}}),
+		ForwardS2C(&irc.Message{
+			Command: irc.RPL_WELCOME,
+			Params:  []string{"alice", "Welcome to a mock irc server alice"},
+		}),
 		ManyMsg(ForwardS2C, welcomeSequence),
 		motd,
 	}
@@ -31,11 +35,9 @@ var (
 		}),
 	}
 
+	// The welcome sequence, omitting the actual RPL_WELCOME at the beginning, since
+	// that is different between the initial connect and reconnect.
 	welcomeSequence = []*irc.Message{
-		{
-			Command: irc.RPL_WELCOME,
-			Params:  []string{"alice", "Welcome to a mock irc server alice"},
-		},
 		{
 			Command: irc.RPL_YOURHOST,
 			Params:  []string{"alice", "Your host is testing.example.com"},
@@ -61,6 +63,10 @@ var (
 		&ClientConnect{},
 		&FromClient{Command: "NICK", Params: []string{"alice"}},
 		&FromClient{Command: "USER", Params: []string{"alice", "0", "*", "Alice"}},
+		&ToClient{
+			Command: irc.RPL_WELCOME,
+			Params:  []string{"alice", "Welcome back to IRC Idler, alice"},
+		},
 		ManyToClient(welcomeSequence),
 		motd,
 	}

@@ -55,7 +55,6 @@ type Proxy struct {
 	// time to use when the client reconnects:
 	haveMsgCache bool
 	msgCache     struct {
-		welcome  []string
 		yourhost string
 		created  string
 		myinfo   []string
@@ -258,29 +257,33 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 				return
 			}
 
-			clientID := p.server.Session.ClientID.String()
+			nick := p.server.Session.ClientID.Nick
 			messages := []*irc.Message{
 				&irc.Message{
 					Command: irc.RPL_WELCOME,
-					Params:  p.msgCache.welcome,
+					Params: []string{
+						nick,
+						"Welcome back to IRC Idler, " +
+							p.server.Session.ClientID.String(),
+					},
 				},
 				&irc.Message{
 					Command: irc.RPL_YOURHOST,
 					Params: []string{
-						clientID,
+						nick,
 						p.msgCache.yourhost,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_CREATED,
 					Params: []string{
-						clientID,
+						nick,
 						p.msgCache.created,
 					},
 				},
 				&irc.Message{
 					Command: irc.RPL_MYINFO,
-					Params:  append([]string{clientID}, p.msgCache.myinfo...),
+					Params:  append([]string{nick}, p.msgCache.myinfo...),
 				},
 			}
 			for _, m := range messages {
@@ -288,7 +291,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 					return
 				}
 			}
-			p.client.Session.ClientID, _ = irc.ParseClientID(clientID)
+			p.client.Session.ClientID = p.server.Session.ClientID
 			// Trigger a message of the day response; once that completes
 			// the client will be ready.
 			p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
@@ -431,8 +434,6 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 
 		p.sendClient(msg)
 	case irc.RPL_WELCOME:
-		p.msgCache.welcome = msg.Params
-
 		// Extract the client ID. annoyingly, this isn't its own argument, so we
 		// have to pull it out of the welcome message manually.
 		parts := strings.Split(msg.Params[1], " ")
