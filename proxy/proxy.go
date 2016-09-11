@@ -343,6 +343,10 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 }
 
 func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelState) {
+	// XXX: this function is longer and more complicated than I'd like. Would
+	// be nice to break it up and/or simplify it.
+
+	// send the expected JOIN response.
 	joinMessage := &irc.Message{
 		Prefix:  p.client.Session.ClientID.String(),
 		Command: "JOIN",
@@ -351,6 +355,9 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelSt
 	if p.sendClient(joinMessage) != nil {
 		return
 	}
+
+	// Send the topic (if there is one). TODO: Send topic author/date of topic
+	// being set?
 	if serverState.Topic != "" {
 		rplTopic := &irc.Message{
 			Command: irc.RPL_TOPIC,
@@ -368,18 +375,62 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelSt
 	clientState := p.client.Session.GetChannel(channelName)
 
 	myNick := p.server.Session.ClientID.Nick
-	for nick, _ := range serverState.InitialUsers {
-		rplNamreply := &irc.Message{
+	newReply := func() *irc.Message {
+		return &irc.Message{
 			Command: irc.RPL_NAMEREPLY,
 			// FIXME: The "=" denotes a public channel. at some point
 			// we should actually check this.
-			Params: []string{myNick, "=", channelName, nick},
+			Params: []string{myNick, "=", channelName, ""},
 		}
-		if p.sendClient(rplNamreply) != nil {
-			return
+	}
+
+	rplNamreply := newReply()
+	needFlush := false // Whether there are unsent nicks buffered in rplNamreply
+	for nick, _ := range serverState.InitialUsers {
+		// The IRC Protocol allows the server to send multiple nicks in a single
+		// RPL_NAMEREPLY message, but rfc2812 says nothing about it being required
+		// or even "RECOMMENDED". Sending one at a time would be simpler, but
+		// Pidgin seems to get confused if we do that, so we batch as many as we
+		// can into one message.
+		//
+		// This theoretically saves bandwidth as well, but that on its own would
+		// be premature optimization, I (zenhack) suspect not a bottleneck, and
+		// it's not why we do it:
+
+		// check if there's space for another nick (plus the space seperator).
+		if rplNamreply.Len()+len(nick)+1 > irc.MaxMessageLen {
+			if p.sendClient(rplNamreply) != nil {
+				return
+			}
+			rplNamreply = newReply()
+			needFlush = false
+		} else {
+			if rplNamreply.Params[3] != "" {
+				// we only want to add a space separator if this is the
+				// first nick:
+				rplNamreply.Params[3] += " "
+			}
+			rplNamreply.Params[3] += nick
+			needFlush = true
 		}
+
+		// We update this a little early; the client won't see this until we send the
+		// batch, but when we return from this function one of the following will be
+		// true:
+		//
+		// 1. At some point we lost the connection to the client, in which case the
+		//    whole state is reset anyway.
+		// 2. All the nicks have been sent as part of some batch.
+		//
+		// In either case, the state will be consistent at the end.
 		clientState.InitialUsers[nick] = true
 	}
+
+	// If there are any nicks in the last message, send it. As usual, if it fails, stop.
+	if needFlush && p.sendClient(rplNamreply) != nil {
+		return
+	}
+
 	if p.sendClient(&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
 		myNick, channelName, "End of NAMES list",
 	}}) == nil {

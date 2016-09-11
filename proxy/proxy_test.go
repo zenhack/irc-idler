@@ -107,10 +107,7 @@ func TestChannelRejoinNoBackLog(t *testing.T) {
 			"alice", "#sandstorm", "Welcome to #sandstorm!",
 		}},
 		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
-			"alice", "=", "#sandstorm", "alice",
-		}},
-		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
-			"alice", "=", "#sandstorm", "bob",
+			"alice", "=", "#sandstorm", "alice bob",
 		}},
 	}
 	TraceTest(t, ExpectMany{
