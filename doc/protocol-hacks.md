@@ -1,5 +1,5 @@
-Our IRC implementation is based mostly on [RFC 2812][rfc], but the
-behavior of software out in the wild sometimes differs, and the RFC is a
+Our IRC implementation uses [RFC 2812][rfc] as a starting point, but the
+behavior of software out in the wild often differs, and the RFC is a
 valiant, but not always successful attempt at documenting that behavior.
 This document indexes the various workarounds we've had to implement in
 order to deal with other software that doesn't follow the spec
