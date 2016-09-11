@@ -54,7 +54,8 @@ The reasons for this are twofold:
    then.
 
 The script `./run-spk-dev.sh` will recompile the sandstorm app and then
-run `vagrant-spk dev`.
+run `vagrant-spk dev`. `./make-spk.sh` will build the app, strip the
+binary (to reduce size) and build an actual spk which can be installed.
 
 # Using (sandstorm)
 
