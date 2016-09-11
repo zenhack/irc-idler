@@ -16,7 +16,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"time"
 	"zenhack.net/go/sandstorm/capnp/grain"
 	ws_capnp "zenhack.net/go/sandstorm/capnp/websession"
 	"zenhack.net/go/sandstorm/websession"
@@ -170,15 +169,11 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 
 	r.Methods("GET").Path("/connect").Headers("Upgrade", "websocket").
 		Handler(websocket.Handler(func(conn *websocket.Conn) {
-			v.Backend.ClientConns <- conn
-			for {
-				// XXX There's a bug in my websession pacakge that causes the
-				// connection to be dropped if this function returns. We're
-				// leaking goroutines on every connection now, but this at
-				// least "works." Fixing the bug and getting rid of this
-				// resource leak is high on my list of priorities.
-				time.Sleep(time.Second)
-			}
+			// The websocket package closes conn when this function returns,
+			// so we can't return until the client connection is closed.
+			rwcc := newContextRWC(v.Ctx, conn)
+			v.Backend.ClientConns <- rwcc
+			<-rwcc.Done()
 		}))
 
 	session := ws_capnp.WebSession_ServerToClient(websession.FromHandler(v.Ctx, r))
@@ -196,4 +191,23 @@ func (h UiView) NewRequestSession(p grain.UiView_newRequestSession) error {
 
 func (h UiView) NewOfferSession(p grain.UiView_newOfferSession) error {
 	return nil
+}
+
+// A wrapper around io.ReadWriteCloser and a cancellable context, which
+// cancels context when closed.
+type contextRWC struct {
+	context.Context
+	cancelFn context.CancelFunc
+	io.ReadWriteCloser
+}
+
+func newContextRWC(ctx context.Context, rwc io.ReadWriteCloser) contextRWC {
+	cancelCtx, cancelFn := context.WithCancel(ctx)
+	return contextRWC{cancelCtx, cancelFn, rwc}
+}
+
+func (c contextRWC) Close() error {
+	err := c.ReadWriteCloser.Close()
+	c.cancelFn()
+	return err
 }
