@@ -36,3 +36,13 @@ since this is allowed according to that
 
 The spec refers to the numeric reply code 353 by two different names
 RPL_NAMREPLY and RPL_NAMEREPLY. We use the latter.
+
+# Duplicate JOINs
+
+Pidgin will send a JOIN message each time the user asks the UI to join a
+channel, even if the user is already in the channel and/or has a window
+open for that channel. If we respond to extra JOIN messages, it will
+open *extra* windows for the same channel. So, we just ignore these if
+our client-side state says they're already in the channel. This seems to
+be consistent with the behavior of most servers, and the RFC doesn't
+offer any advice on this scenario anyway.
