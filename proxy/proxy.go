@@ -59,6 +59,7 @@ type Proxy struct {
 		created  string
 		myinfo   []string
 	}
+	serverPrefix string // The prefix for messages from the server.
 
 	logger *log.Logger // Informational logging (nothing to do with messagelog).
 
@@ -260,6 +261,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 			nick := p.server.Session.ClientID.Nick
 			messages := []*irc.Message{
 				&irc.Message{
+					Prefix:  p.serverPrefix,
 					Command: irc.RPL_WELCOME,
 					Params: []string{
 						nick,
@@ -268,6 +270,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 					},
 				},
 				&irc.Message{
+					Prefix:  p.serverPrefix,
 					Command: irc.RPL_YOURHOST,
 					Params: []string{
 						nick,
@@ -275,6 +278,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 					},
 				},
 				&irc.Message{
+					Prefix:  p.serverPrefix,
 					Command: irc.RPL_CREATED,
 					Params: []string{
 						nick,
@@ -282,6 +286,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 					},
 				},
 				&irc.Message{
+					Prefix:  p.serverPrefix,
 					Command: irc.RPL_MYINFO,
 					Params:  append([]string{nick}, p.msgCache.myinfo...),
 				},
@@ -356,6 +361,7 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelSt
 	}
 	if serverState.Topic != "" {
 		rplTopic := &irc.Message{
+			Prefix:  p.serverPrefix,
 			Command: irc.RPL_TOPIC,
 			Params: []string{
 				p.client.Session.ClientID.String(),
@@ -373,6 +379,7 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelSt
 	myNick := p.server.Session.ClientID.Nick
 	for nick, _ := range serverState.InitialUsers {
 		rplNamreply := &irc.Message{
+			Prefix:  p.serverPrefix,
 			Command: irc.RPL_NAMEREPLY,
 			// FIXME: The "=" denotes a public channel. at some point
 			// we should actually check this.
@@ -383,9 +390,12 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelSt
 		}
 		clientState.InitialUsers[nick] = true
 	}
-	if p.sendClient(&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
-		myNick, channelName, "End of NAMES list",
-	}}) == nil {
+	if p.sendClient(&irc.Message{
+		Prefix:  p.serverPrefix,
+		Command: irc.RPL_ENDOFNAMES,
+		Params: []string{
+			myNick, channelName, "End of NAMES list",
+		}}) == nil {
 		p.replayLog(channelName)
 	}
 }
@@ -434,6 +444,8 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 
 		p.sendClient(msg)
 	case irc.RPL_WELCOME:
+		p.serverPrefix = msg.Prefix
+
 		// Extract the client ID. annoyingly, this isn't its own argument, so we
 		// have to pull it out of the welcome message manually.
 		parts := strings.Split(msg.Params[1], " ")
