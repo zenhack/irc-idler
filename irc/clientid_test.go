@@ -12,8 +12,11 @@ type testCase struct {
 
 var cases = []testCase{
 	testCase{"", ClientID{}, true},
-	testCase{"nick!user@host", ClientID{"nick", "user", "host"}, false},
-	testCase{"nick", ClientID{"nick", "", ""}, false},
+	testCase{"nick!user@host", ClientID{"", "nick", "user", "host"}, false},
+	testCase{"nick", ClientID{"", "nick", "", ""}, false},
+	testCase{"@nick", ClientID{"@", "nick", "", ""}, false},
+	testCase{"+nick", ClientID{"+", "nick", "", ""}, false},
+	testCase{"^nick", ClientID{"", "^nick", "", ""}, false},
 }
 
 // For each of our test cases, verify that:
@@ -24,9 +27,9 @@ var cases = []testCase{
 //    string yields the input string
 func TestParse(t *testing.T) {
 	for _, v := range cases {
-		t.Logf("TestParse: {%q, {%q, %q, %q}, %v}",
+		t.Logf("TestParse: {%q, {%q, %q, %q, %q}, %v}",
 			v.text,
-			v.ClientID.Nick, v.ClientID.User, v.ClientID.Host,
+			v.ClientID.Flag, v.ClientID.Nick, v.ClientID.User, v.ClientID.Host,
 			v.err,
 		)
 
@@ -48,10 +51,10 @@ func TestParse(t *testing.T) {
 		if clientID != v.ClientID {
 			t.Fatalf(
 				"ParseClientID() test failed: expected "+
-					"ClientID{%q, %q, %q} but got "+
-					"ClientID{%q, %q, %q}.",
-				v.ClientID.Nick, v.ClientID.User, v.ClientID.Host,
-				clientID.Nick, clientID.User, clientID.Host,
+					"ClientID{%q, %q, %q, %q} but got "+
+					"ClientID{%q, %q, %q, %q}.",
+				v.ClientID.Flag, v.ClientID.Nick, v.ClientID.User, v.ClientID.Host,
+				clientID.Flag, clientID.Nick, clientID.User, clientID.Host,
 			)
 		}
 

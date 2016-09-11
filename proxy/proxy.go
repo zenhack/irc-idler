@@ -321,6 +321,15 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		p.dropClient()
 	case "JOIN":
 		channelName := msg.Params[0]
+
+		if p.client.Session.HaveChannel(channelName) {
+			// Some clients (e.g. Pidgin) will send a JOIN message when
+			// the user tries to a join a channel, even if they're already in the
+			// channel. Pidgin ends up with duplicate windows/tabs for that
+			// channel if we actually respond to the extra messages, so we don't.
+			return
+		}
+
 		if p.server.Session.HaveChannel(channelName) {
 			p.rejoinChannel(channelName, p.server.Session.GetChannel(channelName))
 		} else {
@@ -479,14 +488,30 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// TODO: store this in the state:
 		// mode := msg.Params[1]
 		channelName := msg.Params[2]
-		nicks := strings.Split(msg.Params[3], " ")
+		users := strings.Split(msg.Params[3], " ")
 
 		if p.sendClient(msg) == nil {
 
 			serverState := p.server.Session.GetChannel(channelName)
 			clientState := p.client.Session.GetChannel(channelName)
-			for _, nick := range nicks {
-				nick = strings.Trim(nick, " \r\n")
+			for _, user := range users {
+
+				user = strings.Trim(user, " \r\n")
+				// XXX: we're accepting full clientIDs + flag here,
+				// but only nick + flag is legal.
+				clientID, err := irc.ParseClientID(user)
+				var nick string
+				if err != nil {
+					p.logger.Warnf(
+						"Got error parsing nick from RPL_NAMEREPLY: %q",
+						err,
+					)
+					// so we just leave it unparsed, which is... wrong.
+					nick = user
+				} else {
+					nick = clientID.Nick
+				}
+
 				serverState.InitialUsers[nick] = true
 				clientState.InitialUsers[nick] = true
 			}
