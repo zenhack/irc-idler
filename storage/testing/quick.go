@@ -136,7 +136,6 @@ func genChannel(r *rand.Rand) []*irc.Message {
 	for i := range ret {
 		value := ret[i].Generate(r, 0)
 		ret[i] = (*irc.Message)(unsafe.Pointer(value.Pointer()))
-		//		genMessage(r)
 	}
 	return ret
 }
