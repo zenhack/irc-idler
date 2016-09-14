@@ -10,19 +10,20 @@ import (
 
 func TestStore(t *testing.T) {
 	var db *sql.DB
-	defer func() {
+	closeLastDB := func() {
+		// Close the db from the previous test. We want a fresh db every time, so we
+		// re-create it during the test. We can't easily close it afterwards, since
+		// RandTest calls Fatal, so we close the previous test's DB, and then get the
+		// last one in a top-level defer.
 		if db != nil {
 			db.Close()
 		}
-	}()
+	}
+	defer closeLastDB()
+
 	stest.RandTest(t, func() storage.Store {
-		if db != nil {
-			// Close the db from last time. We want a fresh db every time, so we
-			// re-create it. We can't easily close it afterwards, since RandTest calls
-			// Fatal, so we close the previous test's DB, and then get the last one in
-			// a top-level defer.
-			db.Close()
-		}
+		closeLastDB()
+
 		var err error
 		db, err = sql.Open("sqlite3", ":memory:")
 		if err != nil {
