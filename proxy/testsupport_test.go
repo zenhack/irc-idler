@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
+	"zenhack.net/go/irc-idler/storage/ephemeral"
 )
 
 var (
@@ -331,7 +332,11 @@ func StartTestProxy() *ProxyState {
 
 	logger := logrus.New()
 	logger.Level = logrus.DebugLevel
-	proxy := NewProxy(clientConns, connector, logger)
+	proxy := NewProxy(
+		logger,
+		ephemeral.NewStore(),
+		clientConns,
+		connector)
 	go proxy.Run()
 
 	return &ProxyState{

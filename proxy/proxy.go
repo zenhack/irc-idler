@@ -11,7 +11,6 @@ import (
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/proxy/internal/session"
 	"zenhack.net/go/irc-idler/storage"
-	"zenhack.net/go/irc-idler/storage/ephemeral"
 
 	"golang.org/x/net/proxy"
 )
@@ -103,7 +102,12 @@ func (c *connection) shutdown() {
 // `addr` is the tcp address of the server
 // `logger`, if non-nil, will be used for informational logging. Note that the logging
 //  preformed is very noisy; it is mostly meant for debugging.
-func NewProxy(clientConns <-chan irc.ReadWriteCloser, serverConnector Connector, logger *log.Logger) *Proxy {
+func NewProxy(
+	logger *log.Logger,
+	store storage.Store,
+	clientConns <-chan irc.ReadWriteCloser,
+	serverConnector Connector) *Proxy {
+
 	if logger == nil {
 		logger = log.New()
 		logger.Out = ioutil.Discard
@@ -114,7 +118,7 @@ func NewProxy(clientConns <-chan irc.ReadWriteCloser, serverConnector Connector,
 		client:          emptyConnection(),
 		server:          emptyConnection(),
 		logger:          logger,
-		messagelogs:     ephemeral.NewStore(),
+		messagelogs:     store,
 		stop:            make(chan struct{}),
 	}
 }
@@ -535,6 +539,17 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// buffered messages addressed directly to us. If not, that log should
 		// be empty anyway:
 		p.replayLog(p.client.Session.ClientID.Nick)
+	case irc.RPL_ENDOFNAMES:
+		p.sendClient(msg)
+		// One of two things has just happened:
+		//
+		// 1. We've just joined a channel for the first time since connecting to
+		//    the server. We should replay log in case we have logged messages
+		//    from a previous connnection.
+		// 2. The user specifically send a NAMES request, in which case they're
+		//    presumably already in the channel, so there should be no log, and
+		//    therefore it is safe to replay it.
+		p.replayLog(msg.Params[1])
 	case "PRIVMSG", "NOTICE":
 		targetName := msg.Params[0]
 		if p.client.Session.HaveChannel(targetName) || p.client.Session.IsMe(targetName) {

@@ -1,20 +1,25 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/net/proxy"
 	"net"
 	"os"
 	"zenhack.net/go/irc-idler/internal/netextra"
 	"zenhack.net/go/irc-idler/irc"
 	ircproxy "zenhack.net/go/irc-idler/proxy"
+	sqlstore "zenhack.net/go/irc-idler/storage/sql"
 )
 
 var (
-	laddr    = flag.String("laddr", ":6667", "Local address to listen on")
-	raddr    = flag.String("raddr", "", "Remote address to connect to")
+	laddr  = flag.String("laddr", ":6667", "Local address to listen on")
+	raddr  = flag.String("raddr", "", "Remote address to connect to")
+	dbpath = flag.String("dbpath", ":memory:", "Path to SQLite database. Uses an in "+
+		"memory database if unspecified")
 	loglevel = flag.String("loglevel", "info", "Log level {debug,info,warn,error,fatal,panic}")
 
 	// TODO: default should probably be `true`.
@@ -45,6 +50,16 @@ func main() {
 	logger := log.New()
 	logger.Level = level
 
+	db, err := sql.Open("sqlite3", *dbpath)
+	if err != nil {
+		logger.Fatalln(err)
+	}
+	if err = db.Ping(); err != nil {
+		logger.Fatalln(err)
+	}
+
+	defer db.Close()
+
 	var dialer proxy.Dialer
 	if *useTLS {
 		dialer = &netextra.TLSDialer{proxy.Direct}
@@ -63,5 +78,5 @@ func main() {
 		Addr:    *raddr,
 	}
 	go ircproxy.AcceptLoop(l, clientConns, logger)
-	ircproxy.NewProxy(clientConns, connector, logger).Run()
+	ircproxy.NewProxy(logger, sqlstore.NewStore(db), clientConns, connector).Run()
 }

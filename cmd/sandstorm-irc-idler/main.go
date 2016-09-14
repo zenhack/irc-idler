@@ -11,6 +11,7 @@ import (
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/proxy"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
+	"zenhack.net/go/irc-idler/storage/ephemeral"
 	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
 	ip_capnp "zenhack.net/go/sandstorm/capnp/ip"
 	"zenhack.net/go/sandstorm/grain"
@@ -145,13 +146,14 @@ func main() {
 			dialer = &netextra.TLSDialer{dialer}
 		}
 		daemon = proxy.NewProxy(
+			logger,
+			ephemeral.NewStore(),
 			daemonClientConns,
 			&proxy.DialerConnector{
 				Dialer:  dialer,
 				Network: "tcp",
 				Addr:    serverConfig.String(),
 			},
-			logger,
 		)
 		go daemon.Run()
 	}
