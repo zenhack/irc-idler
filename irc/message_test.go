@@ -18,6 +18,7 @@ var sampleUnparsedMessages = []string{
 	":alice PRIVMSG ##crypto :Hey Bob!\r\n",
 	":bob PRIVMSG ##crypto :Hey!\r\n",
 	":bob PRIVMSG ##crypto Hey!\r\n",
+	"x\r\n",
 }
 
 // Verify that writing out msg and reading it back results in the same value.

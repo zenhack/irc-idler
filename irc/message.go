@@ -247,8 +247,8 @@ func parseMessage(input *bytes.Buffer) (*Message, error) {
 		result.Prefix = output.String()
 		output.Reset()
 	} else {
-		// No prefix. That byte is part of the command, so record it:
-		output.WriteByte(c)
+		// No prefix. That byte is part of the command, so put it back:
+		input.UnreadByte()
 	}
 
 	err = parseWord(output, input)
