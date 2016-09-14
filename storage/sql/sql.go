@@ -66,15 +66,13 @@ func (l *channelLog) Replay() (storage.LogCursor, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !rows.Next() {
-		defer rows.Close()
-		return storage.EmptyCursor, rows.Err()
-	}
-	return &cursor{
+	ret := &cursor{
 		rows: rows,
 		err:  nil,
 		msg:  nil,
-	}, nil
+	}
+	ret.Next()
+	return ret, nil
 }
 
 func (l *channelLog) Clear() error {
@@ -83,23 +81,10 @@ func (l *channelLog) Clear() error {
 }
 
 func (c *cursor) Get() (*irc.Message, error) {
-	if c.err != nil {
-		return nil, c.err
-	}
-	if c.msg == nil {
-		var str string
-		c.err = c.rows.Scan(&str)
-		if c.err != nil {
-			c.Close()
-			return nil, c.err
-		}
-		c.msg, c.err = irc.ParseMessage(str)
-	}
 	return c.msg, c.err
 }
 
 func (c *cursor) Next() {
-	c.msg = nil
 	if !c.rows.Next() {
 		c.err = c.rows.Err()
 		if c.err == nil {
@@ -111,6 +96,7 @@ func (c *cursor) Next() {
 	var str string
 	c.err = c.rows.Scan(&str)
 	if c.err != nil {
+		c.Close()
 		return
 	}
 	c.msg, c.err = irc.ParseMessage(str)
