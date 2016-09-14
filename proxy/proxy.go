@@ -215,7 +215,6 @@ func (p *Proxy) serve() {
 					p.server.setup(serverConn)
 				}
 			}
-			continue
 		}
 	}
 }
