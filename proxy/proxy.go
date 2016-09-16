@@ -544,9 +544,9 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		// One of two things has just happened:
 		//
 		// 1. We've just joined a channel for the first time since connecting to
-		//    the server. We should replay log in case we have logged messages
-		//    from a previous connnection.
-		// 2. The user specifically send a NAMES request, in which case they're
+		//    the server. We should replay the log in case we have logged
+		//    messages from a previous connnection.
+		// 2. The user specifically sent a NAMES request, in which case they're
 		//    presumably already in the channel, so there should be no log, and
 		//    therefore it is safe to replay it.
 		p.replayLog(msg.Params[1])
