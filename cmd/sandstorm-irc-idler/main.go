@@ -1,8 +1,10 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"github.com/Sirupsen/logrus"
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/net/context"
 	netproxy "golang.org/x/net/proxy"
 	"io"
@@ -11,7 +13,7 @@ import (
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/proxy"
 	"zenhack.net/go/irc-idler/sandstorm/webui"
-	"zenhack.net/go/irc-idler/storage/ephemeral"
+	sqlstore "zenhack.net/go/irc-idler/storage/sql"
 	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
 	ip_capnp "zenhack.net/go/sandstorm/capnp/ip"
 	"zenhack.net/go/sandstorm/grain"
@@ -22,6 +24,11 @@ import (
 const (
 	ipNetworkCapFile = "/var/ipNetworkCap"
 	serverConfigFile = "/var/server-config.json"
+	databaseFile     = "/var/irc-idler.sqlite"
+)
+
+var (
+	db *sql.DB
 )
 
 func saveServerConfig(cfg webui.ServerConfig) error {
@@ -127,6 +134,15 @@ func main() {
 		}
 	*/
 
+	db, err = sql.Open("sqlite3", databaseFile)
+	if err != nil {
+		logger.Fatalln("Failed to open database:", err)
+	}
+	if err = db.Ping(); err != nil {
+		logger.Fatalln("Failed to open database:", err)
+	}
+	store := sqlstore.NewStore(db)
+
 	serverConfig, err = loadServerConfig()
 	if err != nil {
 		logger.Infoln("Failed to load server config:", err)
@@ -147,7 +163,7 @@ func main() {
 		}
 		daemon = proxy.NewProxy(
 			logger,
-			ephemeral.NewStore(),
+			store,
 			daemonClientConns,
 			&proxy.DialerConnector{
 				Dialer:  dialer,
