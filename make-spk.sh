@@ -1,11 +1,6 @@
 #!/usr/bin/env sh
 #
-# Recompile sandstorm-irc-idler and build an spk
+# Strip the sandstorm-irc-idler executable and build an spk
 
-set -ex
-pushd $(dirname $0)/cmd/sandstorm-irc-idler
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build
-strip sandstorm-irc-idler
-popd
-cd $(dirname $0)
+strip "$(dirname $0)/.sandstorm/gopath/bin/sandstorm-irc-idler"
 vagrant-spk pack irc-idler-$(date -Isecond).spk
