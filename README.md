@@ -19,7 +19,7 @@ ideal.
 IRC Idler connects to the IRC server for you, and then acts as an IRC
 server itself -- you connect to IRC Idler, and it proxies the
 connection. When you disconnect, it stays connected, and flags you as
-away until you reconnect, at which point it replays an messages you
+away until you reconnect, at which point it replays any messages you
 missed while you were gone.
 
 ## Sandstorm Design Notes
