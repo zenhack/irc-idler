@@ -39,23 +39,11 @@ The sandstorm version is in `cmd/sandstorm-irc-idler`, the non-sandstorm
 version is in `cmd/irc-idler`. Either executable can be built via
 standard go build.
 
-Note on the sandstorm build: The vagrant-spk boilerplate doesn't
-actually compile anything; you have to build the executable on the host
-machine. If you're developing on a platform other than linux/amd64, you
-can build via:
-
-    GOOS=linux GOARCH=amd64 go build
-
-The reasons for this are twofold:
-
-1. Cross compiling Go is really easy.
-2. The version of go available in the standard vagrant-spk vm is very
-   old (1.3.x), and I'd rather not be limited to what was available
-   then.
-
-The script `./run-spk-dev.sh` will recompile the sandstorm app and then
-run `vagrant-spk dev`. `./make-spk.sh` will build the app, strip the
-binary (to reduce size) and build an actual spk which can be installed.
+Note that we link in sqlite3 via CGO. This makes cross-compilation
+non-trivial, so we do our sandstorm builds in the vagrant vm like
+everybody else. During these builds `GOPATH` is set to
+${srcdir}/.sandstorm/gopath -- bear this in mind, as it won't look in
+your host's `GOPATH` for packages.
 
 # Using (sandstorm)
 
