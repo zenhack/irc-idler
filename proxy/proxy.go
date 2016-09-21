@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
-	"zenhack.net/go/irc-idler/proxy/internal/session"
+	"zenhack.net/go/irc-idler/proxy/state"
 	"zenhack.net/go/irc-idler/storage"
 
 	"golang.org/x/net/proxy"
@@ -69,12 +69,12 @@ type Proxy struct {
 type connection struct {
 	irc.ReadWriteCloser
 	Chan <-chan *irc.Message
-	*session.Session
+	*state.Session
 }
 
 func emptyConnection() *connection {
 	return &connection{
-		Session: session.NewSession(),
+		Session: state.NewSession(),
 	}
 }
 
@@ -134,7 +134,7 @@ func (p *Proxy) Stop() {
 func (c *connection) setup(conn irc.ReadWriteCloser) {
 	c.ReadWriteCloser = conn
 	c.Chan = irc.ReadAll(conn)
-	c.Session = session.NewSession()
+	c.Session = state.NewSession()
 }
 
 func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *log.Logger) {
@@ -160,8 +160,8 @@ func (p *Proxy) sendServer(msg *irc.Message) error {
 	if err != nil {
 		p.logger.Errorf("sendServer(): error: %v.\n", err)
 		p.reset()
-	} else if !p.server.Handshake.Done() {
-		p.server.Handshake.Update(msg)
+	} else {
+		p.server.UpdateFromClient(msg)
 	}
 	return err
 }
@@ -176,8 +176,8 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 	if err != nil {
 		p.logger.Errorf("sendClient(): error: %v.\n", err)
 		p.dropClient()
-	} else if !p.client.Handshake.Done() {
-		p.client.Handshake.Update(msg)
+	} else {
+		p.client.UpdateFromServer(msg)
 	}
 	return err
 }
@@ -320,8 +320,9 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		return
 	}
 
+	p.client.UpdateFromClient(msg)
+
 	if !p.client.Handshake.Done() {
-		p.client.Handshake.Update(msg)
 		p.handleHandshakeMessage(msg)
 		return
 	}
@@ -333,7 +334,10 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	case "JOIN":
 		channelName := msg.Params[0]
 
+		p.logger.Debugf("Got join for channel %q\n", channelName)
+
 		if p.client.Session.HaveChannel(channelName) {
+			p.logger.Infoln("Client already in channel " + channelName)
 			// Some clients (e.g. Pidgin) will send a JOIN message when
 			// the user tries to a join a channel, even if they're already in the
 			// channel. Pidgin ends up with duplicate windows/tabs for that
@@ -342,6 +346,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		}
 
 		if p.server.Session.HaveChannel(channelName) {
+			p.logger.Infoln("Rejoining channel " + channelName)
 			p.rejoinChannel(channelName, p.server.Session.GetChannel(channelName))
 		} else {
 			p.sendServer(msg)
@@ -353,7 +358,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	}
 }
 
-func (p *Proxy) rejoinChannel(channelName string, serverState *session.ChannelState) {
+func (p *Proxy) rejoinChannel(channelName string, serverState *state.ChannelState) {
 	joinMessage := &irc.Message{
 		Prefix:  p.client.Session.ClientID.String(),
 		Command: "JOIN",
@@ -420,9 +425,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		return
 	}
 
-	if !p.server.Handshake.Done() {
-		p.server.Handshake.Update(msg)
-	}
+	p.server.UpdateFromServer(msg)
 
 	switch msg.Command {
 	case "PING":
@@ -560,14 +563,9 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 			p.logMessage(msg)
 		}
 	case "JOIN", "KICK", "PART", "QUIT", "NICK":
-		p.server.Session.Update(msg)
-
 		if !p.client.Handshake.Done() || p.sendClient(msg) != nil {
 			// Can't send the message to the client, so log it.
 			p.logMessage(msg)
-		} else {
-			// client knows about the change; update their state.
-			p.client.Session.Update(msg)
 		}
 	default:
 		// TODO: be a bit more methodical; there's probably a pretty finite list
@@ -631,7 +629,6 @@ func (p *Proxy) replayLog(channelName string) {
 			)
 			return
 		}
-		p.client.Session.GetChannel(channelName).Update(msg)
 		cursor.Next()
 	}
 }
