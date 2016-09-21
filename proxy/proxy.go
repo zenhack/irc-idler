@@ -49,6 +49,10 @@ type Proxy struct {
 	// Per-channel IRC messages recieved while client is not in the channel.
 	messagelogs storage.Store
 
+	// State of the session before messages in the logs have been recieved.
+	// TODO: this needs to be persistent if messagelogs is.
+	preLogSession *state.Session
+
 	// recorded server responses; if the server already thinks we're logged in, we
 	// can't get it to send these again, so we record them the first
 	// time to use when the client reconnects:
@@ -119,6 +123,7 @@ func NewProxy(
 		server:          emptyConnection(),
 		logger:          logger,
 		messagelogs:     store,
+		preLogSession:   state.NewSession(),
 		stop:            make(chan struct{}),
 	}
 }
@@ -178,6 +183,11 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 		p.dropClient()
 	} else {
 		p.client.UpdateFromServer(msg)
+
+		// FIXME: We clear the log only when everything is finsihed,
+		// but we update this incrementally. This could cause an
+		// inconsistency if the client disconnects during the replay.
+		p.preLogSession.UpdateFromServer(msg)
 	}
 	return err
 }
@@ -347,7 +357,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 
 		if p.server.Session.HaveChannel(channelName) {
 			p.logger.Infoln("Rejoining channel " + channelName)
-			p.rejoinChannel(channelName, p.server.Session.GetChannel(channelName))
+			p.rejoinChannel(channelName, p.preLogSession.GetChannel(channelName))
 		} else {
 			p.sendServer(msg)
 		}
@@ -358,7 +368,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	}
 }
 
-func (p *Proxy) rejoinChannel(channelName string, serverState *state.ChannelState) {
+func (p *Proxy) rejoinChannel(channelName string, preLogState *state.ChannelState) {
 	joinMessage := &irc.Message{
 		Prefix:  p.client.Session.ClientID.String(),
 		Command: "JOIN",
@@ -367,14 +377,14 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *state.ChannelStat
 	if p.sendClient(joinMessage) != nil {
 		return
 	}
-	if serverState.Topic != "" {
+	if preLogState.Topic != "" {
 		rplTopic := &irc.Message{
 			Prefix:  p.serverPrefix,
 			Command: irc.RPL_TOPIC,
 			Params: []string{
 				p.client.Session.ClientID.String(),
 				channelName,
-				serverState.Topic,
+				preLogState.Topic,
 			},
 		}
 		if p.sendClient(rplTopic) != nil {
@@ -385,7 +395,7 @@ func (p *Proxy) rejoinChannel(channelName string, serverState *state.ChannelStat
 	clientState := p.client.Session.GetChannel(channelName)
 
 	myNick := p.server.Session.ClientID.Nick
-	for nick, _ := range serverState.InitialUsers {
+	for nick, _ := range preLogState.InitialUsers {
 		rplNamreply := &irc.Message{
 			Prefix:  p.serverPrefix,
 			Command: irc.RPL_NAMEREPLY,
@@ -437,6 +447,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	case
 		irc.RPL_MOTDSTART,
 		irc.RPL_MOTD,
+		irc.RPL_NAMEREPLY,
 		irc.RPL_TOPIC,
 
 		// Various nick related errors. TODO: we should be more careful;
@@ -489,39 +500,6 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.sendClient(msg)
 		p.haveMsgCache = true
 		p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
-	case irc.RPL_NAMEREPLY:
-		// TODO: store this in the state:
-		// mode := msg.Params[1]
-		channelName := msg.Params[2]
-		users := strings.Split(msg.Params[3], " ")
-
-		if p.sendClient(msg) == nil {
-
-			serverState := p.server.Session.GetChannel(channelName)
-			clientState := p.client.Session.GetChannel(channelName)
-			for _, user := range users {
-
-				user = strings.Trim(user, " \r\n")
-				// XXX: we're accepting full clientIDs + flag here,
-				// but only nick + flag is legal.
-				clientID, err := irc.ParseClientID(user)
-				var nick string
-				if err != nil {
-					p.logger.Warnf(
-						"Got error parsing nick from RPL_NAMEREPLY: %q",
-						err,
-					)
-					// so we just leave it unparsed, which is... wrong.
-					nick = user
-				} else {
-					nick = clientID.Nick
-				}
-
-				serverState.InitialUsers[nick] = true
-				clientState.InitialUsers[nick] = true
-			}
-		}
-
 	case irc.RPL_ENDOFMOTD, irc.ERR_NOMOTD:
 		p.sendClient(msg)
 		// If we're just reconnecting, this is the appropriate point to send
@@ -603,7 +581,6 @@ func (p *Proxy) replayLog(channelName string) {
 			}
 		} else if err == io.EOF {
 			p.logger.Debugf("Done replaying log for %q.", channelName)
-			// TODO: update server's initialUsers to match client.
 			chLog.Clear()
 			return
 		} else {

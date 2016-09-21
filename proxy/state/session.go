@@ -79,6 +79,9 @@ func (s *Session) UpdateFromServer(msg *irc.Message) {
 		case irc.RPL_TOPIC:
 			channelName, topic := msg.Params[1], msg.Params[2]
 			s.GetChannel(channelName).Topic = topic
+		case irc.RPL_NAMEREPLY:
+			channelName := msg.Params[2]
+			s.GetChannel(channelName).UpdateFromServer(msg)
 		}
 	}
 }
