@@ -19,7 +19,7 @@ const pkgdef :Spk.PackageDefinition = (
 
     appTitle = (defaultText = "IRC Idler"),
 
-    appVersion = 8,  # Increment this for every release.
+    appVersion = 9,  # Increment this for every release.
 
     appMarketingVersion = (defaultText = "Alpha 1"),
     # Human-readable representation of appVersion. Should match the way you
