@@ -437,6 +437,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	case
 		irc.RPL_MOTDSTART,
 		irc.RPL_MOTD,
+		irc.RPL_TOPIC,
 
 		// Various nick related errors. TODO: we should be more careful;
 		// at least based on the RFC, NICKCOLLISION could potnetially happen without
@@ -488,21 +489,6 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		p.sendClient(msg)
 		p.haveMsgCache = true
 		p.sendServer(&irc.Message{Command: "MOTD", Params: []string{}})
-	case irc.RPL_TOPIC:
-		channelName, topic := msg.Params[1], msg.Params[2]
-		if !p.server.Session.HaveChannel(channelName) {
-			// Something weird is going on; the server shouldn't be
-			// sending us one of these for a channel we're not in.
-			p.logger.Warnln(
-				"Server sent RPL_TOPIC for a channel we're not in: %q",
-				msg,
-			)
-			return
-		}
-		p.server.Session.GetChannel(channelName).Topic = topic
-		if p.client.Session.HaveChannel(channelName) && p.sendClient(msg) != nil {
-			p.client.Session.GetChannel(channelName).Topic = topic
-		}
 	case irc.RPL_NAMEREPLY:
 		// TODO: store this in the state:
 		// mode := msg.Params[1]

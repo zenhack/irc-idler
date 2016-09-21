@@ -76,6 +76,9 @@ func (s *Session) UpdateFromServer(msg *irc.Message) {
 		case "KICK", "PART", "JOIN", "QUIT":
 			// Some other user's state in a channel changed.
 			s.GetChannel(msg.Params[0]).UpdateFromServer(msg)
+		case irc.RPL_TOPIC:
+			channelName, topic := msg.Params[1], msg.Params[2]
+			s.GetChannel(channelName).Topic = topic
 		}
 	}
 }
