@@ -78,6 +78,24 @@ func reconnect(nick string) ProxyAction {
 	}
 }
 
+func joinSeq(nick string) []*irc.Message {
+	return []*irc.Message{
+		&irc.Message{Prefix: nick, Command: "JOIN", Params: []string{"#sandstorm"}},
+		&irc.Message{Command: irc.RPL_TOPIC, Params: []string{
+			nick, "#sandstorm", "Welcome to #sandstorm!",
+		}},
+		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+			nick, "=", "#sandstorm", nick,
+		}},
+		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+			nick, "=", "#sandstorm", "bob",
+		}},
+		&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
+			nick, "#sandstorm", "End of NAMES list",
+		}},
+	}
+}
+
 func TestConnectDisconnect(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		ClientConnect{},
@@ -113,28 +131,13 @@ func TestBasicReconnect(t *testing.T) {
 }
 
 func TestChannelRejoinNoBackLog(t *testing.T) {
-	joinSeq := []*irc.Message{
-		&irc.Message{Prefix: "alice", Command: "JOIN", Params: []string{"#sandstorm"}},
-		&irc.Message{Command: irc.RPL_TOPIC, Params: []string{
-			"alice", "#sandstorm", "Welcome to #sandstorm!",
-		}},
-		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
-			"alice", "=", "#sandstorm", "alice",
-		}},
-		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
-			"alice", "=", "#sandstorm", "bob",
-		}},
-		&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
-			"alice", "#sandstorm", "End of NAMES list",
-		}},
-	}
 	TraceTest(t, ExpectMany{
 		initialConnect("alice"),
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		ManyMsg(ForwardS2C, joinSeq),
+		ManyMsg(ForwardS2C, joinSeq("alice")),
 		ClientDisconnect{},
 		reconnect("alice"),
 		&FromClient{Command: "JOIN", Params: []string{"#sandstorm"}},
-		ManyToClient(joinSeq),
+		ManyToClient(joinSeq("alice")),
 	})
 }
