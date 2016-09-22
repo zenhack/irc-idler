@@ -6,19 +6,6 @@ import (
 )
 
 var (
-	initialConnect = ExpectMany{
-		ClientConnect{},
-		ConnectServer{},
-		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
-		ForwardC2S(&irc.Message{Command: "USER", Params: []string{"alice", "0", "*", "Alice"}}),
-		ForwardS2C(&irc.Message{
-			Command: irc.RPL_WELCOME,
-			Params:  []string{"alice", "Welcome to a mock irc server alice"},
-		}),
-		ManyMsg(ForwardS2C, welcomeSequence),
-		motd,
-	}
-
 	motd = ExpectMany{
 		&ToServer{Command: "MOTD"},
 		ForwardS2C(&irc.Message{
@@ -34,22 +21,39 @@ var (
 			Params:  []string{"End MOTD."},
 		}),
 	}
+)
 
-	// The welcome sequence, omitting the actual RPL_WELCOME at the beginning, since
-	// that is different between the initial connect and reconnect.
-	welcomeSequence = []*irc.Message{
+func initialConnect(nick string) ProxyAction {
+	return ExpectMany{
+		ClientConnect{},
+		ConnectServer{},
+		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{nick}}),
+		ForwardC2S(&irc.Message{Command: "USER", Params: []string{nick, "0", "*", "Alice"}}),
+		ForwardS2C(&irc.Message{
+			Command: irc.RPL_WELCOME,
+			Params:  []string{nick, "Welcome to a mock irc server alice"},
+		}),
+		ManyMsg(ForwardS2C, welcomeSequence(nick)),
+		motd,
+	}
+}
+
+// The welcome sequence, omitting the actual RPL_WELCOME at the beginning, since
+// that is different between the initial connect and reconnect.
+func welcomeSequence(nick string) []*irc.Message {
+	return []*irc.Message{
 		{
 			Command: irc.RPL_YOURHOST,
-			Params:  []string{"alice", "Your host is testing.example.com"},
+			Params:  []string{nick, "Your host is testing.example.com"},
 		},
 		{
 			Command: irc.RPL_CREATED,
-			Params:  []string{"alice", "This server was started now-ish."},
+			Params:  []string{nick, "This server was started now-ish."},
 		},
 		{
 			Command: irc.RPL_MYINFO,
 			Params: []string{
-				"alice",
+				nick,
 				"testing.example.com",
 				"mock-0.1",
 				// TODO: these might actually matter someday:
@@ -58,19 +62,21 @@ var (
 			},
 		},
 	}
+}
 
-	reconnect = ExpectMany{
+func reconnect(nick string) ProxyAction {
+	return ExpectMany{
 		&ClientConnect{},
-		&FromClient{Command: "NICK", Params: []string{"alice"}},
-		&FromClient{Command: "USER", Params: []string{"alice", "0", "*", "Alice"}},
+		&FromClient{Command: "NICK", Params: []string{nick}},
+		&FromClient{Command: "USER", Params: []string{nick, "0", "*", "Alice"}},
 		&ToClient{
 			Command: irc.RPL_WELCOME,
-			Params:  []string{"alice", "Welcome back to IRC Idler, alice"},
+			Params:  []string{nick, "Welcome back to IRC Idler, " + nick},
 		},
-		ManyToClient(welcomeSequence),
+		ManyToClient(welcomeSequence(nick)),
 		motd,
 	}
-)
+}
 
 func TestConnectDisconnect(t *testing.T) {
 	TraceTest(t, ExpectMany{
@@ -95,14 +101,14 @@ func TestNickInUse(t *testing.T) {
 }
 
 func TestInitialLogin(t *testing.T) {
-	TraceTest(t, initialConnect)
+	TraceTest(t, initialConnect("alice"))
 }
 
 func TestBasicReconnect(t *testing.T) {
 	TraceTest(t, ExpectMany{
-		initialConnect,
+		initialConnect("alice"),
 		ClientDisconnect{},
-		reconnect,
+		reconnect("alice"),
 	})
 }
 
@@ -123,11 +129,11 @@ func TestChannelRejoinNoBackLog(t *testing.T) {
 		}},
 	}
 	TraceTest(t, ExpectMany{
-		initialConnect,
+		initialConnect("alice"),
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
 		ManyMsg(ForwardS2C, joinSeq),
 		ClientDisconnect{},
-		reconnect,
+		reconnect("alice"),
 		&FromClient{Command: "JOIN", Params: []string{"#sandstorm"}},
 		ManyToClient(joinSeq),
 	})
