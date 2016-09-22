@@ -84,4 +84,11 @@ func (s *Session) UpdateFromServer(msg *irc.Message) {
 			s.GetChannel(channelName).UpdateFromServer(msg)
 		}
 	}
+
+	switch msg.Command {
+	case "NICK":
+		for _, channel := range s.channels {
+			channel.UpdateFromServer(msg)
+		}
+	}
 }

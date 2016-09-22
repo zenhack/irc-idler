@@ -24,6 +24,14 @@ func (s *ChannelState) UpdateFromClient(msg *irc.Message) {
 
 }
 
+func (s *ChannelState) addUser(nick string) {
+	s.InitialUsers[nick] = true
+}
+
+func (s *ChannelState) removeUser(nick string) {
+	delete(s.InitialUsers, nick)
+}
+
 func (s *ChannelState) UpdateFromServer(msg *irc.Message) {
 	// TODO: report the errors from ParseClientID somehow.
 	switch msg.Command {
@@ -32,14 +40,14 @@ func (s *ChannelState) UpdateFromServer(msg *irc.Message) {
 		if err != nil {
 			return
 		}
-		s.InitialUsers[clientID.Nick] = true
+		s.addUser(clientID.Nick)
 	case "PART", "KICK", "QUIT":
 		// TODO: we need to specially handle the case were *we* are leaving.
 		clientID, err := irc.ParseClientID(msg.Prefix)
 		if err != nil {
 			return
 		}
-		delete(s.InitialUsers, clientID.Nick)
+		s.removeUser(clientID.Nick)
 	case irc.RPL_NAMEREPLY:
 		// TODO: store this in the state:
 		// mode := msg.Params[1]
@@ -61,6 +69,17 @@ func (s *ChannelState) UpdateFromServer(msg *irc.Message) {
 			}
 
 			s.InitialUsers[nick] = true
+		}
+	case "NICK":
+		newNick := msg.Params[0]
+		clientID, err := irc.ParseClientID(msg.Prefix)
+		if err != nil {
+			return
+		}
+		_, ok := s.InitialUsers[clientID.Nick]
+		if ok {
+			s.removeUser(clientID.Nick)
+			s.addUser(newNick)
 		}
 	}
 }

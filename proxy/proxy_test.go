@@ -141,3 +141,17 @@ func TestChannelRejoinNoBackLog(t *testing.T) {
 		ManyToClient(joinSeq("alice")),
 	})
 }
+
+func TestChangeNickRejoin(t *testing.T) {
+	TraceTest(t, ExpectMany{
+		initialConnect("alice"),
+		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
+		ManyMsg(ForwardS2C, joinSeq("alice")),
+		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{"eve"}}),
+		ForwardS2C(&irc.Message{Prefix: "alice", Command: "NICK", Params: []string{"eve"}}),
+		ClientDisconnect{},
+		reconnect("eve"),
+		&FromClient{Command: "JOIN", Params: []string{"#sandstorm"}},
+		ManyToClient(joinSeq("eve")),
+	})
+}
