@@ -40,10 +40,11 @@ var (
 	//
 	// This is useful for e.g. single stepping in a debugger, as
 	// otherwise the timeout prevents inspecting things.
-	TimeoutLength = time.Second
+	TimeoutLength = 10 * time.Second
 )
 
 func init() {
+	pingTime = TimeoutLength / 10
 	durationEnv := os.Getenv("II_TEST_TIMEOUT")
 	if durationEnv == "" {
 		return
@@ -53,6 +54,7 @@ func init() {
 		panic(err)
 	}
 	TimeoutLength = duration
+	pingTime = TimeoutLength / 10
 
 }
 
@@ -164,6 +166,7 @@ type (
 	ClientDisconnect struct{}
 	ConnectServer    struct{}
 	ServerDisconnect struct{}
+	Sleep            time.Duration
 )
 
 func (a *DropClient) String() string       { return "&DropClient{}" }
@@ -177,6 +180,11 @@ func (m *ToClient) String() string   { return "&ToClient(" + (*irc.Message)(m).S
 func (m *ToServer) String() string   { return "&ToServer(" + (*irc.Message)(m).String() + ")" }
 func (m *FromClient) String() string { return "&FromClient(" + (*irc.Message)(m).String() + ")" }
 func (m *FromServer) String() string { return "&FromServer(" + (*irc.Message)(m).String() + ")" }
+
+func (s Sleep) Expect(state *ProxyState, timeout time.Duration) error {
+	time.Sleep(time.Duration(s))
+	return nil
+}
 
 type MsgsDiffer struct {
 	Expected, Actual *irc.Message

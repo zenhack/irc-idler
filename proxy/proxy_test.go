@@ -155,3 +155,19 @@ func TestChangeNickRejoin(t *testing.T) {
 		ManyToClient(joinSeq("eve")),
 	})
 }
+
+func TestClientPingDrop(t *testing.T) {
+	TraceTest(t, ExpectMany{
+		initialConnect,
+
+		Sleep(pingTime),
+		&ToClient{Command: "PING", Params: []string{"irc-idler"}},
+		&ToServer{Command: "PING", Params: []string{"irc-idler"}},
+
+		&FromServer{Command: "PONG", Params: []string{"irc-idler"}},
+		Sleep(pingTime),
+
+		&DropClient{},
+		&ToServer{Command: "PING", Params: []string{"irc-idler"}},
+	})
+}

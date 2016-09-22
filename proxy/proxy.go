@@ -16,6 +16,16 @@ import (
 )
 
 var (
+	// Amount of time after which to send a PING, or to disconnect after
+	// a PING has been sent without a corresponding PONG.
+	//
+	// This is a var instead of a const so that we can reduce it during
+	// testing; a reasonable ping time for production is a long time to
+	// wait during a test.
+	pingTime = 30 * time.Second
+)
+
+var (
 	errConnectionClosed = errors.New("Connection Closed")
 )
 
@@ -74,6 +84,9 @@ type connection struct {
 	irc.ReadWriteCloser
 	Chan <-chan *irc.Message
 	*state.Session
+
+	DropDeadline time.Time // Disconnect if we don't recieve a message first
+	PingDeadline time.Time // Sendn PING if we don't recieve a message first
 }
 
 func emptyConnection() *connection {
@@ -82,9 +95,19 @@ func emptyConnection() *connection {
 	}
 }
 
+func (c *connection) IsClosed() bool {
+	return c == nil || c.ReadWriteCloser == nil || c.Chan == nil
+}
+
+func (c *connection) updateDeadlines() {
+	now := time.Now()
+	c.PingDeadline = now.Add(pingTime)
+	c.DropDeadline = now.Add(2 * pingTime)
+}
+
 // Tear down the connection. If it is not currently active, this is a noop.
 func (c *connection) shutdown() {
-	if c == nil || c.ReadWriteCloser == nil || c.Chan == nil {
+	if c.IsClosed() {
 		return
 	}
 	c.Close()
@@ -140,6 +163,7 @@ func (c *connection) setup(conn irc.ReadWriteCloser) {
 	c.ReadWriteCloser = conn
 	c.Chan = irc.ReadAll(conn)
 	c.Session = state.NewSession()
+	c.updateDeadlines()
 }
 
 func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *log.Logger) {
@@ -194,6 +218,8 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 
 func (p *Proxy) serve() {
 	p.logger.Infoln("Proxy starting up")
+	ticker := time.NewTicker(pingTime)
+	defer ticker.Stop()
 	for {
 		p.logger.Debugln("serve(): Top of loop")
 		select {
@@ -203,10 +229,21 @@ func (p *Proxy) serve() {
 			return
 		case msg, ok := <-p.client.Chan:
 			p.logger.Debugln("serve(): Got client event")
+			p.client.updateDeadlines()
 			p.handleClientEvent(msg, ok)
 		case msg, ok := <-p.server.Chan:
 			p.logger.Debugln("serve(): Got server event")
+			p.server.updateDeadlines()
 			p.handleServerEvent(msg, ok)
+		case <-ticker.C:
+			p.checkTimeout(
+				p.client,
+				func() { p.dropClient() },
+				func(msg *irc.Message) { p.sendClient(msg) })
+			p.checkTimeout(
+				p.server,
+				func() { p.reset() },
+				func(msg *irc.Message) { p.sendServer(msg) })
 		case clientConn := <-p.clientConns:
 			p.logger.Debugln("serve(): Got client connection")
 			// A client connected. We boot the old one, if any:
@@ -230,6 +267,18 @@ func (p *Proxy) serve() {
 				}
 			}
 		}
+	}
+}
+
+func (p *Proxy) checkTimeout(conn *connection, drop func(), send func(msg *irc.Message)) {
+	if conn.IsClosed() {
+		return
+	}
+	now := time.Now()
+	if now.After(conn.DropDeadline) {
+		drop()
+	} else if now.After(conn.PingDeadline) {
+		send(&irc.Message{Command: "PING", Params: []string{"irc-idler"}})
 	}
 }
 
@@ -338,6 +387,12 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	}
 
 	switch msg.Command {
+	case "PING":
+		msg.Prefix = ""
+		msg.Command = "PONG"
+		p.sendClient(msg)
+	case "PONG":
+		// We just ignore this one; the keepalive logic is centralized.
 	case "QUIT":
 		p.logger.Debugln("Client sent quit; disconnecting.")
 		p.dropClient()
@@ -442,6 +497,8 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 		msg.Prefix = ""
 		msg.Command = "PONG"
 		p.sendServer(msg)
+	case "PONG":
+		// We just ignore this one; the keepalive logic is centralized.
 
 	// Things we can pass through to the client without any extra handling:
 	case
