@@ -158,7 +158,7 @@ func TestChangeNickRejoin(t *testing.T) {
 
 func TestClientPingDrop(t *testing.T) {
 	TraceTest(t, ExpectMany{
-		initialConnect,
+		initialConnect("alice"),
 
 		Sleep(pingTime),
 		&ToClient{Command: "PING", Params: []string{"irc-idler"}},
