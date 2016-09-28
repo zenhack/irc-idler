@@ -247,20 +247,18 @@ func (p *Proxy) serve() {
 		case clientConn := <-p.clientConns:
 			p.logger.Debugln("serve(): Got client connection")
 			// A client connected. We boot the old one, if any:
-			p.client.shutdown()
+			p.dropClient()
 
 			p.client.setup(clientConn)
 
-			// If we're not done with the handshake, restart the server connection too.
-			if !p.server.Handshake.Done() {
-				p.server.shutdown()
+			if p.server.IsClosed() {
 				p.logger.Debugln("Connecting to server...")
 				serverConn, err := p.serverConnector.Connect()
 				if err != nil {
 					p.logger.Debugln("Server connection failed:", err)
 					// Server connection failed. Boot the client and let
 					// them deal with it:
-					p.client.shutdown()
+					p.dropClient()
 				} else {
 					p.logger.Debugln("Established connection to server")
 					p.server.setup(serverConn)
