@@ -84,8 +84,16 @@ type connection struct {
 	Chan <-chan *irc.Message
 	*state.Session
 
-	DropDeadline time.Time // Disconnect if we don't recieve a message first
-	PingDeadline time.Time // Sendn PING if we don't recieve a message first
+	// Disconnect if we don't recieve a message first. Only valid if PingSent
+	// is true.
+	DropDeadline time.Time
+
+	// Send PING if we don't recieve a message first. Only valid if PingSent
+	// is false.
+	PingDeadline time.Time
+
+	// True if we have sent a PING and are waiting on a response.
+	PingSent bool
 }
 
 func emptyConnection() *connection {
@@ -99,9 +107,8 @@ func (c *connection) IsClosed() bool {
 }
 
 func (c *connection) updateDeadlines() {
-	now := time.Now()
-	c.PingDeadline = now.Add(pingTime)
-	c.DropDeadline = now.Add(2 * pingTime)
+	c.PingDeadline = time.Now().Add(pingTime)
+	c.PingSent = false
 }
 
 // Tear down the connection. If it is not currently active, this is a noop.
@@ -272,10 +279,12 @@ func (p *Proxy) checkTimeout(conn *connection, drop func(), send func(msg *irc.M
 		return
 	}
 	now := time.Now()
-	if now.After(conn.DropDeadline) {
+	if conn.PingSent && now.After(conn.DropDeadline) {
 		drop()
-	} else if now.After(conn.PingDeadline) {
+	} else if !conn.PingSent && now.After(conn.PingDeadline) {
 		send(&irc.Message{Command: "PING", Params: []string{"irc-idler"}})
+		conn.PingSent = true
+		conn.DropDeadline = now.Add(pingTime)
 	}
 }
 
