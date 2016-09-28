@@ -2,14 +2,13 @@ package netextra
 
 import (
 	"crypto/tls"
-	"golang.org/x/net/proxy"
 	"net"
 )
 
 // Dialer that speaks TLS over the `Base` Dialer, verifying the hostname
 // it is passed.
 type TLSDialer struct {
-	Base proxy.Dialer
+	Base Dialer
 }
 
 func (d *TLSDialer) Dial(network, addr string) (net.Conn, error) {

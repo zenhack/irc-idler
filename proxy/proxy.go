@@ -8,11 +8,10 @@ import (
 	"net"
 	"strings"
 	"time"
+	"zenhack.net/go/irc-idler/internal/netextra"
 	"zenhack.net/go/irc-idler/irc"
 	"zenhack.net/go/irc-idler/proxy/state"
 	"zenhack.net/go/irc-idler/storage"
-
-	"golang.org/x/net/proxy"
 )
 
 var (
@@ -34,7 +33,7 @@ type Connector interface {
 }
 
 type DialerConnector struct {
-	proxy.Dialer
+	netextra.Dialer
 	Network string
 	Addr    string
 }

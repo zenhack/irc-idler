@@ -6,7 +6,6 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	_ "github.com/mattn/go-sqlite3"
-	"golang.org/x/net/proxy"
 	"net"
 	"os"
 	"zenhack.net/go/irc-idler/internal/netextra"
@@ -60,11 +59,11 @@ func main() {
 
 	defer db.Close()
 
-	var dialer proxy.Dialer
+	var dialer netextra.Dialer
 	if *useTLS {
-		dialer = &netextra.TLSDialer{proxy.Direct}
+		dialer = &netextra.TLSDialer{netextra.Direct}
 	} else {
-		dialer = proxy.Direct
+		dialer = netextra.Direct
 	}
 	l, err := net.Listen("tcp", *laddr)
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"github.com/Sirupsen/logrus"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/net/context"
-	netproxy "golang.org/x/net/proxy"
 	"io"
 	"io/ioutil"
 	"zenhack.net/go/irc-idler/internal/netextra"
@@ -156,7 +155,7 @@ func main() {
 			daemon = nil
 		}
 		daemonClientConns = make(chan irc.ReadWriteCloser)
-		var dialer netproxy.Dialer
+		var dialer netextra.Dialer
 		dialer = &ip.IpNetworkDialer{ctx, *ipNetwork}
 		if serverConfig.TLS {
 			dialer = &netextra.TLSDialer{dialer}
