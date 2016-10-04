@@ -1,3 +1,4 @@
+// Package proxy implements the IRC Idler proxy daemon proper.
 package proxy
 
 import (
@@ -46,6 +47,7 @@ func (dc *DialerConnector) Connect() (irc.ReadWriteCloser, error) {
 	return irc.NewReadWriteCloser(conn), err
 }
 
+// A Proxy is a daemon implementing the core IRC Idler proxying functionality.
 type Proxy struct {
 	// Incomming client connections:
 	clientConns <-chan irc.ReadWriteCloser
@@ -79,6 +81,10 @@ type Proxy struct {
 	stop chan struct{}
 }
 
+// A connection is an IRC connection. This implements both session state
+// tracking and communication.
+//
+// Note that a connection may be in a "disconnected" state.
 type connection struct {
 	irc.ReadWriteCloser
 	Chan <-chan *irc.Message
@@ -96,16 +102,20 @@ type connection struct {
 	PingSent bool
 }
 
+// Return a fresh connection in the "disconnected" state.
 func emptyConnection() *connection {
 	return &connection{
 		Session: state.NewSession(),
 	}
 }
 
+// Returns true if and only if the connection is closed.
 func (c *connection) IsClosed() bool {
 	return c == nil || c.ReadWriteCloser == nil || c.Chan == nil
 }
 
+// Update the deadlines for sending PING messages and/or dropping the
+// connection, based on having received a message at time.Now().
 func (c *connection) updateDeadlines() {
 	c.PingDeadline = time.Now().Add(pingTime)
 	c.PingSent = false
@@ -130,11 +140,10 @@ func (c *connection) shutdown() {
 //
 // parameters:
 //
-// `l` will be used to listen for client connections.
-// `dialer` is a proxy.Dialer to be used to establish the connection.
-// `addr` is the tcp address of the server
-// `logger`, if non-nil, will be used for informational logging. Note that the logging
-//  preformed is very noisy; it is mostly meant for debugging.
+// `logger`, if non-nil, will be used for informational logging.
+// `store` is the Store to use for persistent data.
+// `clientConns` is a channel on which incoming client connections are sent.
+// `serverConnector` is a `Connector` to be used to connect to the server.
 func NewProxy(
 	logger *log.Logger,
 	store storage.Store,
@@ -157,14 +166,18 @@ func NewProxy(
 	}
 }
 
+// Run the proxy daemon. Returns when the daemon shuts down.
 func (p *Proxy) Run() {
 	p.serve()
 }
 
+// Shuts down the daemon, which must be already running. Does not wait for
+// the daemon to shut down completely before returning.
 func (p *Proxy) Stop() {
 	p.stop <- struct{}{}
 }
 
+// Set up the connection, using `conn` as the transport.
 func (c *connection) setup(conn irc.ReadWriteCloser) {
 	c.ReadWriteCloser = conn
 	c.Chan = irc.ReadAll(conn)
@@ -172,6 +185,7 @@ func (c *connection) setup(conn irc.ReadWriteCloser) {
 	c.updateDeadlines()
 }
 
+// Accept connections from `l`, and send them on `acceptChan`.
 func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *log.Logger) {
 	for {
 		conn, err := l.Accept()
@@ -222,6 +236,7 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 	return err
 }
 
+// main server loop
 func (p *Proxy) serve() {
 	p.logger.Infoln("Proxy starting up")
 	ticker := time.NewTicker(pingTime)
@@ -274,6 +289,11 @@ func (p *Proxy) serve() {
 	}
 }
 
+// Send PINGs or drop the connection due to timeout, if needed.
+//
+// `conn` is the connection to query.
+// `drop` is the function to call if the connection should be dropped.
+// `send` is the function to call if a PING message needs to be sent.
 func (p *Proxy) checkTimeout(conn *connection, drop func(), send func(msg *irc.Message)) {
 	if conn.IsClosed() {
 		return
@@ -288,6 +308,7 @@ func (p *Proxy) checkTimeout(conn *connection, drop func(), send func(msg *irc.M
 	}
 }
 
+// Handle a message sent by the client during a handshake.
 func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 	switch msg.Command {
 	case "PASS", "USER", "NICK":
@@ -372,6 +393,11 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 	}
 }
 
+// Handle an event from the client
+//
+// The parameters are those returned by the receive on the client's channel;
+// `ok` indicates whether a message was successfully received. If it is falls,
+// the client has disconnected.
 func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	if !ok {
 		p.logger.Debugln("Client disconnected")
@@ -429,6 +455,9 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 	}
 }
 
+// Handle the case where the client has just requested to join channel that we
+// are already in on the server side. This replays message logs and updates
+// state as necessary.
 func (p *Proxy) rejoinChannel(channelName string, preLogState *state.ChannelState) {
 	joinMessage := &irc.Message{
 		Prefix:  p.client.Session.ClientID.String(),
@@ -479,6 +508,7 @@ func (p *Proxy) rejoinChannel(channelName string, preLogState *state.ChannelStat
 	}
 }
 
+// Like handleClientEvent, but for events from the server.
 func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 	if ok {
 		if err := msg.Validate(); err != nil {
@@ -614,12 +644,14 @@ func (p *Proxy) dropClient() {
 	}
 }
 
+// Drop both connections.
 func (p *Proxy) reset() {
 	p.logger.Debugln("Dropping connections.")
 	p.client.shutdown()
 	p.server.shutdown()
 }
 
+// Replay the message log for channel `channelName`.
 func (p *Proxy) replayLog(channelName string) {
 	p.logger.Debugf("replayLog(%q)\n", channelName)
 	chLog, err := p.messagelogs.GetChannel(channelName)
@@ -659,6 +691,7 @@ func (p *Proxy) replayLog(channelName string) {
 	}
 }
 
+// Log the message `msg`. Note that not all message types are logged.
 func (p *Proxy) logMessage(msg *irc.Message) {
 	p.logger.Debugln("logMessage(%q)\n", msg)
 
