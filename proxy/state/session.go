@@ -43,10 +43,7 @@ func (s *Session) HaveChannel(channelName string) bool {
 // the channel, this adds the channel to our list and returns a fresh state.
 func (s *Session) GetChannel(channelName string) *ChannelState {
 	if !s.HaveChannel(channelName) {
-		s.channels[channelName] = &ChannelState{
-			Topic:        "",
-			InitialUsers: make(map[string]bool),
-		}
+		s.channels[channelName] = NewChannelState("")
 	}
 	return s.channels[channelName]
 }

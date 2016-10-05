@@ -9,7 +9,7 @@ import (
 type ChannelState struct {
 	Topic string // the topic for the channel, if any.
 
-	// Initial users in the channel. If the client is connected, this is
+	// Users in the channel. If the client is connected, this is
 	// modified as users enter and leave the channel, but if the client
 	// is disconnected, this is left unchanged. In this case we save
 	// JOIN/PART messages to the log, and update this as we replay them.
@@ -17,19 +17,39 @@ type ChannelState struct {
 	// for a user who is not in the channel, which might confuse the client.
 	// putting these users in RPL_NAMREPLY and then replaying the log
 	// should get us to the correct final state.
-	InitialUsers map[string]bool
+	users map[string]bool
+}
+
+func NewChannelState(topic string) *ChannelState {
+	return &ChannelState{
+		Topic: topic,
+		users: make(map[string]bool),
+	}
 }
 
 func (s *ChannelState) UpdateFromClient(msg *irc.Message) {
 
 }
 
-func (s *ChannelState) addUser(nick string) {
-	s.InitialUsers[nick] = true
+// Return a slice of nicks for users in the channel
+func (s *ChannelState) Users() []string {
+	ret := make([]string, 0, len(s.users))
+	for nick, _ := range s.users {
+		ret = append(ret, nick)
+	}
+	return ret
 }
 
-func (s *ChannelState) removeUser(nick string) {
-	delete(s.InitialUsers, nick)
+func (s *ChannelState) AddUser(nick string) {
+	s.users[nick] = true
+}
+
+func (s *ChannelState) RemoveUser(nick string) {
+	delete(s.users, nick)
+}
+
+func (s *ChannelState) HaveUser(nick string) bool {
+	return s.users[nick]
 }
 
 func (s *ChannelState) UpdateFromServer(msg *irc.Message) {
@@ -40,14 +60,14 @@ func (s *ChannelState) UpdateFromServer(msg *irc.Message) {
 		if err != nil {
 			return
 		}
-		s.addUser(clientID.Nick)
+		s.AddUser(clientID.Nick)
 	case "PART", "KICK", "QUIT":
 		// TODO: we need to specially handle the case were *we* are leaving.
 		clientID, err := irc.ParseClientID(msg.Prefix)
 		if err != nil {
 			return
 		}
-		s.removeUser(clientID.Nick)
+		s.RemoveUser(clientID.Nick)
 	case irc.RPL_NAMEREPLY:
 		// TODO: store this in the state:
 		// mode := msg.Params[1]
@@ -68,7 +88,7 @@ func (s *ChannelState) UpdateFromServer(msg *irc.Message) {
 				nick = clientID.Nick
 			}
 
-			s.InitialUsers[nick] = true
+			s.AddUser(nick)
 		}
 	case "NICK":
 		newNick := msg.Params[0]
@@ -76,10 +96,9 @@ func (s *ChannelState) UpdateFromServer(msg *irc.Message) {
 		if err != nil {
 			return
 		}
-		_, ok := s.InitialUsers[clientID.Nick]
-		if ok {
-			s.removeUser(clientID.Nick)
-			s.addUser(newNick)
+		if s.HaveUser(clientID.Nick) {
+			s.RemoveUser(clientID.Nick)
+			s.AddUser(newNick)
 		}
 	}
 }

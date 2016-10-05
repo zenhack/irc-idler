@@ -485,7 +485,7 @@ func (p *Proxy) rejoinChannel(channelName string, preLogState *state.ChannelStat
 	clientState := p.client.Session.GetChannel(channelName)
 
 	myNick := p.server.Session.ClientID.Nick
-	for nick, _ := range preLogState.InitialUsers {
+	for _, nick := range preLogState.Users() {
 		rplNamreply := &irc.Message{
 			Prefix:  p.serverPrefix,
 			Command: irc.RPL_NAMEREPLY,
@@ -496,7 +496,7 @@ func (p *Proxy) rejoinChannel(channelName string, preLogState *state.ChannelStat
 		if p.sendClient(rplNamreply) != nil {
 			return
 		}
-		clientState.InitialUsers[nick] = true
+		clientState.AddUser(nick)
 	}
 	if p.sendClient(&irc.Message{
 		Prefix:  p.serverPrefix,
