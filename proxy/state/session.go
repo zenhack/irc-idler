@@ -11,13 +11,13 @@ type Session struct {
 
 	Handshake
 
-	channels map[string]*ChannelState // State of channels we're in.
+	channels AllChannelStates
 }
 
 // Return a newly initialized session
 func NewSession() *Session {
 	return &Session{
-		channels: make(map[string]*ChannelState),
+		channels: &mapChannelStates{make(map[string]*ChannelState)},
 	}
 }
 
@@ -35,17 +35,13 @@ func (s *Session) IsMe(prefix string) bool {
 
 // Return true if we're in the channel `channelName`, false otherwise.
 func (s *Session) HaveChannel(channelName string) bool {
-	_, ok := s.channels[channelName]
-	return ok
+	return s.channels.HaveChannel(channelName)
 }
 
 // Get the state for channel `channelName`. If we're not already marked as in
 // the channel, this adds the channel to our list and returns a fresh state.
 func (s *Session) GetChannel(channelName string) *ChannelState {
-	if !s.HaveChannel(channelName) {
-		s.channels[channelName] = NewChannelState("")
-	}
-	return s.channels[channelName]
+	return s.channels.GetChannel(channelName)
 }
 
 func (s *Session) UpdateFromClient(msg *irc.Message) {
@@ -54,38 +50,17 @@ func (s *Session) UpdateFromClient(msg *irc.Message) {
 
 func (s *Session) UpdateFromServer(msg *irc.Message) {
 	s.Handshake.UpdateFromServer(msg)
+	s.channels.UpdateFromServer(msg)
 
 	if s.IsMe(msg.Prefix) {
 		// The message is about us:
 		switch msg.Command {
 		case "KICK", "PART":
 			// we left a channel
-			delete(s.channels, msg.Params[0])
-		case "JOIN":
-			// we entered a channel
-			s.GetChannel(msg.Params[0]).UpdateFromServer(msg)
+			s.channels.DeleteChannel(msg.Params[0])
 		case "NICK":
 			// we changed our nick
 			s.ClientID.Nick = msg.Params[0]
-		}
-	} else {
-		switch msg.Command {
-		case "KICK", "PART", "JOIN", "QUIT":
-			// Some other user's state in a channel changed.
-			s.GetChannel(msg.Params[0]).UpdateFromServer(msg)
-		case irc.RPL_TOPIC:
-			channelName, topic := msg.Params[1], msg.Params[2]
-			s.GetChannel(channelName).Topic = topic
-		case irc.RPL_NAMEREPLY:
-			channelName := msg.Params[2]
-			s.GetChannel(channelName).UpdateFromServer(msg)
-		}
-	}
-
-	switch msg.Command {
-	case "NICK":
-		for _, channel := range s.channels {
-			channel.UpdateFromServer(msg)
 		}
 	}
 }

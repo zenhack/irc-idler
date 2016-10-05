@@ -5,6 +5,58 @@ import (
 	"zenhack.net/go/irc-idler/irc"
 )
 
+type AllChannelStates interface {
+	State
+	GetChannel(channelName string) *ChannelState
+	HaveChannel(channelName string) bool
+	DeleteChannel(channelName string)
+}
+
+type mapChannelStates struct {
+	channels map[string]*ChannelState
+}
+
+// Return true if we're in the channel `channelName`, false otherwise.
+func (s *mapChannelStates) HaveChannel(channelName string) bool {
+	_, ok := s.channels[channelName]
+	return ok
+}
+
+// Get the state for channel `channelName`. If we're not already marked as in
+// the channel, this adds the channel to our list and returns a fresh state.
+func (s *mapChannelStates) GetChannel(channelName string) *ChannelState {
+	if !s.HaveChannel(channelName) {
+		s.channels[channelName] = NewChannelState("")
+	}
+	return s.channels[channelName]
+}
+
+func (s *mapChannelStates) DeleteChannel(channelName string) {
+	delete(s.channels, channelName)
+}
+
+func (s *mapChannelStates) UpdateFromClient(msg *irc.Message) {
+
+}
+
+func (s *mapChannelStates) UpdateFromServer(msg *irc.Message) {
+	switch msg.Command {
+	case "KICK", "PART", "QUIT", "JOIN":
+		s.GetChannel(msg.Params[0]).UpdateFromServer(msg)
+	case irc.RPL_TOPIC:
+		channelName, topic := msg.Params[1], msg.Params[2]
+		s.GetChannel(channelName).Topic = topic
+	case irc.RPL_NAMEREPLY:
+		channelName := msg.Params[2]
+		s.GetChannel(channelName).UpdateFromServer(msg)
+	case "NICK":
+		for _, channel := range s.channels {
+			channel.UpdateFromServer(msg)
+		}
+	}
+
+}
+
 // State of the channel
 type ChannelState struct {
 	Topic string // the topic for the channel, if any.
