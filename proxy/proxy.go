@@ -300,6 +300,7 @@ func (p *Proxy) checkTimeout(conn *connection, drop func(), send func(msg *irc.M
 	}
 	now := time.Now()
 	if conn.PingSent && now.After(conn.DropDeadline) {
+		p.logger.Infoln("PING timeout; dropping connection.")
 		drop()
 	} else if !conn.PingSent && now.After(conn.PingDeadline) {
 		send(&irc.Message{Command: "PING", Params: []string{"irc-idler"}})
