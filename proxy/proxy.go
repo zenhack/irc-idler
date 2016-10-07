@@ -697,7 +697,14 @@ func (p *Proxy) logMessage(msg *irc.Message) {
 	p.logger.Debugln("logMessage(%q)\n", msg)
 
 	switch msg.Command {
-	case "PRIVMSG", "NOTICE", "JOIN", "KICK", "PART", "QUIT", "NICK":
+	case "QUIT":
+		// FIXME: we need to store this, since otherwise we don't
+		// hear about users leaving channels by disconnecting from the
+		// network entirely. However, before we cand do that we need to
+		// do a bit of refactoring, since QUIT doesn't include channel
+		// information. For now, we just punt.
+		return
+	case "PRIVMSG", "NOTICE", "JOIN", "KICK", "PART", "NICK":
 	default:
 		// Don't log anything we don't specificially whitelist above.
 		return
