@@ -78,21 +78,21 @@ func reconnect(nick string) ProxyAction {
 	}
 }
 
-func joinSeq(nick string) []*irc.Message {
-	return []*irc.Message{
-		&irc.Message{Prefix: nick, Command: "JOIN", Params: []string{"#sandstorm"}},
-		&irc.Message{Command: irc.RPL_TOPIC, Params: []string{
+func joinSeq(convert func(*irc.Message) ProxyAction, nick string) ProxyAction {
+	return ExpectMany{
+		convert(&irc.Message{Prefix: nick, Command: "JOIN", Params: []string{"#sandstorm"}}),
+		convert(&irc.Message{Command: irc.RPL_TOPIC, Params: []string{
 			nick, "#sandstorm", "Welcome to #sandstorm!",
-		}},
-		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+		}}),
+		convert(&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
 			nick, "=", "#sandstorm", nick,
-		}},
-		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+		}}),
+		convert(&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
 			nick, "=", "#sandstorm", "bob",
-		}},
-		&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
+		}}),
+		convert(&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
 			nick, "#sandstorm", "End of NAMES list",
-		}},
+		}}),
 	}
 }
 
@@ -134,11 +134,11 @@ func TestChannelRejoinNoBackLog(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		initialConnect("alice"),
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		ManyMsg(ForwardS2C, joinSeq("alice")),
+		joinSeq(ForwardS2C, "alice"),
 		ClientDisconnect{},
 		reconnect("alice"),
 		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		ManyMsg(ToClient, joinSeq("alice")),
+		joinSeq(ToClient, "alice"),
 	})
 }
 
@@ -146,13 +146,13 @@ func TestChangeNickRejoin(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		initialConnect("alice"),
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		ManyMsg(ForwardS2C, joinSeq("alice")),
+		joinSeq(ForwardS2C, "alice"),
 		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{"eve"}}),
 		ForwardS2C(&irc.Message{Prefix: "alice", Command: "NICK", Params: []string{"eve"}}),
 		ClientDisconnect{},
 		reconnect("eve"),
 		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		ManyMsg(ToClient, joinSeq("eve")),
+		joinSeq(ToClient, "eve"),
 	})
 }
 
