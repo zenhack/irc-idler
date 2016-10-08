@@ -7,7 +7,6 @@ import (
 
 var (
 	motd = ExpectMany{
-		ToServer(&irc.Message{Command: "MOTD"}),
 		ForwardS2C(&irc.Message{
 			Command: irc.RPL_MOTDSTART,
 			Params:  []string{"motd for test server"},
@@ -74,6 +73,7 @@ func reconnect(nick string) ProxyAction {
 			Params:  []string{nick, "Welcome back to IRC Idler, " + nick},
 		}),
 		ManyMsg(ToClient, welcomeSequence(nick)),
+		ToServer(&irc.Message{Command: "MOTD"}),
 		motd,
 	}
 }
