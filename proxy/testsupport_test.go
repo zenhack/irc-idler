@@ -167,34 +167,47 @@ type ProxyAction interface {
 }
 
 type ProxyState struct {
-	ToServer, ToClient                 <-chan *irc.Message
-	FromServer, FromClient             chan<- *irc.Message
-	ConnectClient, ConnectServer       chan<- irc.ReadWriteCloser
-	ConnectRequests                    <-chan struct{}
-	DropClient, DropServer             <-chan struct{}
-	ClientDisconnect, ServerDisconnect context.CancelFunc
+	ToChans         [numEndpoints]<-chan *irc.Message
+	FromChans       [numEndpoints]chan<- *irc.Message
+	ConnectChans    [numEndpoints]chan<- irc.ReadWriteCloser
+	ConnectRequests <-chan struct{}
+	DropChans       [numEndpoints]<-chan struct{}
+	Disconnect      [numEndpoints]context.CancelFunc
 }
 
-type (
-	DropClient       struct{}
-	DropServer       struct{}
-	ClientConnect    struct{}
-	ClientDisconnect struct{}
-	ConnectServer    struct{}
-	ServerDisconnect struct{}
-	Sleep            time.Duration
+type Endpoint int
+
+const (
+	Client Endpoint = iota
+	Server
+	numEndpoints
 )
 
-func (a *DropClient) String() string       { return "&DropClient{}" }
-func (a *ClientConnect) String() string    { return "&ClientConnect{}" }
-func (a *ClientDisconnect) String() string { return "&ClientDisconnect{}" }
-func (a *ConnectServer) String() string    { return "&ConnectServer{}" }
-func (a *ServerDisconnect) String() string { return "&ServerDisconnect{}" }
-func (a *DropServer) String() string       { return "&DropServer{}" }
+func (e Endpoint) String() string {
+	return map[Endpoint]string{
+		Client: "Client",
+		Server: "Server",
+	}[e]
+}
 
-func (s Sleep) Expect(state *ProxyState, timeout time.Duration) error {
-	time.Sleep(time.Duration(s))
-	return nil
+func Drop(endpoint Endpoint) ProxyAction {
+	return ExpectFunc(fmt.Sprintf("Drop(%v)", endpoint),
+		func(state *ProxyState, timeout time.Duration) error {
+			select {
+			case <-time.After(timeout):
+				return Timeout
+			case <-state.DropChans[endpoint]:
+				return nil
+			}
+		})
+}
+
+func Sleep(sleepTime time.Duration) ProxyAction {
+	return ExpectFunc(fmt.Sprintf("Sleep(%v)", sleepTime),
+		func(state *ProxyState, timeout time.Duration) error {
+			time.Sleep(sleepTime)
+			return nil
+		})
 }
 
 type MsgsDiffer struct {
@@ -221,49 +234,42 @@ func NewRWC(oldCtx context.Context) (to, from chan *irc.Message, rwc *ChanRWC) {
 	return
 }
 
-func (cd ClientDisconnect) Expect(state *ProxyState, timeout time.Duration) error {
-	state.ClientDisconnect()
-	return nil
+func Disconnect(endpoint Endpoint) ProxyAction {
+	return ExpectFunc(fmt.Sprintf("Disconnect(%v)", endpoint),
+		func(state *ProxyState, timeout time.Duration) error {
+			state.Disconnect[endpoint]()
+			return nil
+		})
 }
 
-func (sd ServerDisconnect) Expect(state *ProxyState, timeout time.Duration) error {
-	state.ServerDisconnect()
-	return nil
-}
-
-func (cc ClientConnect) Expect(state *ProxyState, timeout time.Duration) error {
-	toClient, fromClient, rwc := NewRWC(context.TODO())
+func (state *ProxyState) initEndpoint(endpoint Endpoint, timeout time.Duration) error {
+	to, from, rwc := NewRWC(context.TODO())
 
 	select {
-	case state.ConnectClient <- rwc:
-		state.ToClient = toClient
-		state.FromClient = fromClient
-		state.DropClient = rwc.Context.Done()
-		state.ClientDisconnect = rwc.CancelFunc
+	case state.ConnectChans[endpoint] <- rwc:
+		state.ToChans[endpoint] = to
+		state.FromChans[endpoint] = from
+		state.DropChans[endpoint] = rwc.Context.Done()
+		state.Disconnect[endpoint] = rwc.CancelFunc
 		return nil
 	case <-time.After(timeout):
 		return Timeout
 	}
 }
 
-func (cs ConnectServer) Expect(state *ProxyState, timeout time.Duration) error {
-	select {
-	case <-time.After(timeout):
-		return Timeout
-	case <-state.ConnectRequests:
-		toServer, fromServer, rwc := NewRWC(context.TODO())
-
-		select {
-		case <-time.After(timeout):
-			return Timeout
-		case state.ConnectServer <- rwc:
-			state.ToServer = toServer
-			state.FromServer = fromServer
-			state.DropServer = rwc.Context.Done()
-			state.ServerDisconnect = rwc.CancelFunc
-			return nil
-		}
-	}
+func Connect(endpoint Endpoint) ProxyAction {
+	return ExpectFunc(fmt.Sprintf("Connect(%v)", endpoint),
+		func(state *ProxyState, timeout time.Duration) error {
+			if endpoint == Server {
+				// wait for the daemon to ask for a connection
+				select {
+				case <-time.After(timeout):
+					return Timeout
+				case <-state.ConnectRequests:
+				}
+			}
+			return state.initEndpoint(endpoint, timeout)
+		})
 }
 
 func fromMsgExpect(msg *irc.Message, msgChan chan<- *irc.Message, timeout time.Duration) error {
@@ -275,65 +281,35 @@ func fromMsgExpect(msg *irc.Message, msgChan chan<- *irc.Message, timeout time.D
 	}
 }
 
-func toMsgExpect(expected *irc.Message, msgChan <-chan *irc.Message, timeout time.Duration) error {
-	select {
-	case <-time.After(timeout):
-		return Timeout
-	case actual := <-msgChan:
-		if !expected.Eq(actual) {
-			return &MsgsDiffer{
-				Expected: expected,
-				Actual:   actual,
+func To(endpoint Endpoint, expected *irc.Message) ProxyAction {
+	label := fmt.Sprintf("To(%s, %q)", endpoint, expected)
+	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
+		select {
+		case <-time.After(timeout):
+			return Timeout
+		case actual := <-state.ToChans[endpoint]:
+			if !expected.Eq(actual) {
+				return &MsgsDiffer{
+					Expected: expected,
+					Actual:   actual,
+				}
 			}
 		}
-	}
-	return nil
-}
-
-func dropExpect(closeChan <-chan struct{}, timeout time.Duration) error {
-	select {
-	case <-time.After(timeout):
-		return Timeout
-	case <-closeChan:
 		return nil
-	}
-}
-
-func (dc DropClient) Expect(state *ProxyState, timeout time.Duration) error {
-	return dropExpect(state.DropClient, timeout)
-}
-
-func (ds DropServer) Expect(state *ProxyState, timeout time.Duration) error {
-	return dropExpect(state.DropServer, timeout)
-}
-
-func ToServer(msg *irc.Message) ProxyAction {
-	label := fmt.Sprintf("ToServer(%q)", msg)
-	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
-		return toMsgExpect(msg, state.ToServer, timeout)
 	})
 }
 
-func ToClient(msg *irc.Message) ProxyAction {
-	label := fmt.Sprintf("ToClient(%q)", msg)
+func From(endpoint Endpoint, msg *irc.Message) ProxyAction {
+	label := fmt.Sprintf("From(%v, %q)", endpoint, msg)
 	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
-		return toMsgExpect(msg, state.ToClient, timeout)
+		return fromMsgExpect(msg, state.FromChans[endpoint], timeout)
 	})
 }
 
-func FromServer(msg *irc.Message) ProxyAction {
-	label := fmt.Sprintf("FromServer(%q)", msg)
-	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
-		return fromMsgExpect(msg, state.FromServer, timeout)
-	})
-}
-
-func FromClient(msg *irc.Message) ProxyAction {
-	label := fmt.Sprintf("FromClient(%q)", msg)
-	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
-		return fromMsgExpect(msg, state.FromClient, timeout)
-	})
-}
+func ToServer(expected *irc.Message) ProxyAction { return To(Server, expected) }
+func ToClient(expected *irc.Message) ProxyAction { return To(Client, expected) }
+func FromServer(msg *irc.Message) ProxyAction    { return From(Server, msg) }
+func FromClient(msg *irc.Message) ProxyAction    { return From(Client, msg) }
 
 func ManyMsg(convert func(msg *irc.Message) ProxyAction, msgs []*irc.Message) ProxyAction {
 	ret := make(ExpectMany, len(msgs))
@@ -362,11 +338,12 @@ func StartTestProxy() *ProxyState {
 		connector)
 	go proxy.Run()
 
-	return &ProxyState{
-		ConnectServer:   connectResponses,
+	state := &ProxyState{
 		ConnectRequests: connectRequests,
-		ConnectClient:   clientConns,
 	}
+	state.ConnectChans[Client] = clientConns
+	state.ConnectChans[Server] = connectResponses
+	return state
 }
 
 func TraceTest(t *testing.T, action ProxyAction) {

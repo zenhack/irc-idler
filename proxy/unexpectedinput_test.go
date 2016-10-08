@@ -9,8 +9,8 @@ import (
 
 func TestUnexpected_RPL_TOPIC(t *testing.T) {
 	TraceTest(t, ExpectMany{
-		ClientConnect{},
-		ConnectServer{},
+		Connect(Client),
+		Connect(Server),
 		FromServer(&irc.Message{
 			Command: irc.RPL_TOPIC,
 			Params:  []string{"alice", "#unexpected", "unexpected topic!"},
@@ -23,8 +23,8 @@ func TestUnexpected_RPL_TOPIC(t *testing.T) {
 
 func TestUnexpected_RPL_NAMEREPLY(t *testing.T) {
 	TraceTest(t, ExpectMany{
-		ClientConnect{},
-		ConnectServer{},
+		Connect(Client),
+		Connect(Server),
 		FromServer(&irc.Message{
 			Command: irc.RPL_NAMEREPLY,
 			Params: []string{

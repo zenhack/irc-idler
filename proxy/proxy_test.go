@@ -25,8 +25,8 @@ var (
 
 func initialConnect(nick string) ProxyAction {
 	return ExpectMany{
-		ClientConnect{},
-		ConnectServer{},
+		Connect(Client),
+		Connect(Server),
 		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{nick}}),
 		ForwardC2S(&irc.Message{Command: "USER", Params: []string{nick, "0", "*", "Alice"}}),
 		ForwardS2C(&irc.Message{
@@ -66,7 +66,7 @@ func welcomeSequence(nick string) []*irc.Message {
 
 func reconnect(nick string) ProxyAction {
 	return ExpectMany{
-		&ClientConnect{},
+		Connect(Client),
 		FromClient(&irc.Message{Command: "NICK", Params: []string{nick}}),
 		FromClient(&irc.Message{Command: "USER", Params: []string{nick, "0", "*", "Alice"}}),
 		ToClient(&irc.Message{
@@ -98,19 +98,19 @@ func joinSeq(convert func(*irc.Message) ProxyAction, nick string) ProxyAction {
 
 func TestConnectDisconnect(t *testing.T) {
 	TraceTest(t, ExpectMany{
-		ClientConnect{},
-		ConnectServer{},
-		ClientDisconnect{},
+		Connect(Client),
+		Connect(Server),
+		Disconnect(Client),
 		// Handshake isn't done:
-		DropServer{},
+		Drop(Server),
 	})
 }
 
 // Regression tests for https://github.com/zenhack/irc-idler/issues/4
 func TestNickInUse(t *testing.T) {
 	TraceTest(t, ExpectMany{
-		ClientConnect{},
-		ConnectServer{},
+		Connect(Client),
+		Connect(Server),
 		FromClient(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
 		ToServer(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
 		FromServer(&irc.Message{Command: irc.ERR_NICKNAMEINUSE}),
@@ -125,7 +125,7 @@ func TestInitialLogin(t *testing.T) {
 func TestBasicReconnect(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		initialConnect("alice"),
-		ClientDisconnect{},
+		Disconnect(Client),
 		reconnect("alice"),
 	})
 }
@@ -135,7 +135,7 @@ func TestChannelRejoinNoBackLog(t *testing.T) {
 		initialConnect("alice"),
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
 		joinSeq(ForwardS2C, "alice"),
-		ClientDisconnect{},
+		Disconnect(Client),
 		reconnect("alice"),
 		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
 		joinSeq(ToClient, "alice"),
@@ -149,7 +149,7 @@ func TestChangeNickRejoin(t *testing.T) {
 		joinSeq(ForwardS2C, "alice"),
 		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{"eve"}}),
 		ForwardS2C(&irc.Message{Prefix: "alice", Command: "NICK", Params: []string{"eve"}}),
-		ClientDisconnect{},
+		Disconnect(Client),
 		reconnect("eve"),
 		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
 		joinSeq(ToClient, "eve"),
@@ -167,7 +167,7 @@ func TestClientPingDrop(t *testing.T) {
 		FromServer(&irc.Message{Command: "PONG", Params: []string{"irc-idler"}}),
 		Sleep(pingTime),
 
-		&DropClient{},
+		Drop(Client),
 		ToServer(&irc.Message{Command: "PING", Params: []string{"irc-idler"}}),
 	})
 }
