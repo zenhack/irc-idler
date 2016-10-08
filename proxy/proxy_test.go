@@ -78,18 +78,32 @@ func reconnect(nick string) ProxyAction {
 	}
 }
 
-func joinSeq(convert func(*irc.Message) ProxyAction, nick string) ProxyAction {
+func joinSeq(forward bool, nick string) ProxyAction {
+	var (
+		namerepliesAction ProxyAction
+		convert           func(*irc.Message) ProxyAction
+	)
+	namereplyMsgs := []*irc.Message{
+		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+			nick, "=", "#sandstorm", nick,
+		}},
+		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+			nick, "=", "#sandstorm", "bob",
+		}},
+	}
+	if forward {
+		convert = ForwardS2C
+		namerepliesAction = ManyMsg(convert, namereplyMsgs)
+	} else {
+		convert = ToClient
+		namerepliesAction = UnorderedTo(Client, namereplyMsgs)
+	}
 	return ExpectMany{
 		convert(&irc.Message{Prefix: nick, Command: "JOIN", Params: []string{"#sandstorm"}}),
 		convert(&irc.Message{Command: irc.RPL_TOPIC, Params: []string{
 			nick, "#sandstorm", "Welcome to #sandstorm!",
 		}}),
-		convert(&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
-			nick, "=", "#sandstorm", nick,
-		}}),
-		convert(&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
-			nick, "=", "#sandstorm", "bob",
-		}}),
+		namerepliesAction,
 		convert(&irc.Message{Command: irc.RPL_ENDOFNAMES, Params: []string{
 			nick, "#sandstorm", "End of NAMES list",
 		}}),
@@ -134,11 +148,11 @@ func TestChannelRejoinNoBackLog(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		initialConnect("alice"),
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		joinSeq(ForwardS2C, "alice"),
+		joinSeq(true, "alice"),
 		Disconnect(Client),
 		reconnect("alice"),
 		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		joinSeq(ToClient, "alice"),
+		joinSeq(false, "alice"),
 	})
 }
 
@@ -146,13 +160,13 @@ func TestChangeNickRejoin(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		initialConnect("alice"),
 		ForwardC2S(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		joinSeq(ForwardS2C, "alice"),
+		joinSeq(true, "alice"),
 		ForwardC2S(&irc.Message{Command: "NICK", Params: []string{"eve"}}),
 		ForwardS2C(&irc.Message{Prefix: "alice", Command: "NICK", Params: []string{"eve"}}),
 		Disconnect(Client),
 		reconnect("eve"),
 		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
-		joinSeq(ToClient, "eve"),
+		joinSeq(false, "eve"),
 	})
 }
 

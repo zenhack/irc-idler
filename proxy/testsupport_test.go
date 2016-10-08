@@ -306,6 +306,28 @@ func From(endpoint Endpoint, msg *irc.Message) ProxyAction {
 	})
 }
 
+func UnorderedTo(endpoint Endpoint, expected []*irc.Message) ProxyAction {
+	return ExpectFunc(fmt.Sprintf("UnorderedTo(%v, %v)", endpoint, expected),
+		func(state *ProxyState, timeout time.Duration) error {
+			have := make(map[string]bool, len(expected))
+			for range expected {
+				select {
+				case <-time.After(timeout):
+					return Timeout
+				case msg := <-state.ToChans[endpoint]:
+					have[msg.String()] = true
+				}
+			}
+			for _, msg := range expected {
+				if !have[msg.String()] {
+					return fmt.Errorf(
+						"Did not receive expected message: %v", msg)
+				}
+			}
+			return nil
+		})
+}
+
 func ToServer(expected *irc.Message) ProxyAction { return To(Server, expected) }
 func ToClient(expected *irc.Message) ProxyAction { return To(Client, expected) }
 func FromServer(msg *irc.Message) ProxyAction    { return From(Server, msg) }
