@@ -41,7 +41,7 @@ func (s *mapChannelStates) UpdateFromClient(msg *irc.Message) {
 
 func (s *mapChannelStates) UpdateFromServer(msg *irc.Message) {
 	switch msg.Command {
-	case "KICK", "PART", "QUIT", "JOIN":
+	case "KICK", "PART", "JOIN":
 		s.GetChannel(msg.Params[0]).UpdateFromServer(msg)
 	case irc.RPL_TOPIC:
 		channelName, topic := msg.Params[1], msg.Params[2]
@@ -49,7 +49,7 @@ func (s *mapChannelStates) UpdateFromServer(msg *irc.Message) {
 	case irc.RPL_NAMEREPLY:
 		channelName := msg.Params[2]
 		s.GetChannel(channelName).UpdateFromServer(msg)
-	case "NICK":
+	case "NICK", "QUIT":
 		for _, channel := range s.channels {
 			channel.UpdateFromServer(msg)
 		}
