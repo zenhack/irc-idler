@@ -7,7 +7,7 @@ import (
 
 var (
 	motd = ExpectMany{
-		&ToServer{Command: "MOTD"},
+		ToServer(&irc.Message{Command: "MOTD"}),
 		ForwardS2C(&irc.Message{
 			Command: irc.RPL_MOTDSTART,
 			Params:  []string{"motd for test server"},
@@ -67,13 +67,13 @@ func welcomeSequence(nick string) []*irc.Message {
 func reconnect(nick string) ProxyAction {
 	return ExpectMany{
 		&ClientConnect{},
-		&FromClient{Command: "NICK", Params: []string{nick}},
-		&FromClient{Command: "USER", Params: []string{nick, "0", "*", "Alice"}},
-		&ToClient{
+		FromClient(&irc.Message{Command: "NICK", Params: []string{nick}}),
+		FromClient(&irc.Message{Command: "USER", Params: []string{nick, "0", "*", "Alice"}}),
+		ToClient(&irc.Message{
 			Command: irc.RPL_WELCOME,
 			Params:  []string{nick, "Welcome back to IRC Idler, " + nick},
-		},
-		ManyToClient(welcomeSequence(nick)),
+		}),
+		ManyMsg(ToClient, welcomeSequence(nick)),
 		motd,
 	}
 }
@@ -111,10 +111,10 @@ func TestNickInUse(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		ClientConnect{},
 		ConnectServer{},
-		&FromClient{Command: "NICK", Params: []string{"alice"}},
-		&ToServer{Command: "NICK", Params: []string{"alice"}},
-		&FromServer{Command: irc.ERR_NICKNAMEINUSE},
-		&ToClient{Command: irc.ERR_NICKNAMEINUSE},
+		FromClient(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
+		ToServer(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
+		FromServer(&irc.Message{Command: irc.ERR_NICKNAMEINUSE}),
+		ToClient(&irc.Message{Command: irc.ERR_NICKNAMEINUSE}),
 	})
 }
 
@@ -137,8 +137,8 @@ func TestChannelRejoinNoBackLog(t *testing.T) {
 		ManyMsg(ForwardS2C, joinSeq("alice")),
 		ClientDisconnect{},
 		reconnect("alice"),
-		&FromClient{Command: "JOIN", Params: []string{"#sandstorm"}},
-		ManyToClient(joinSeq("alice")),
+		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
+		ManyMsg(ToClient, joinSeq("alice")),
 	})
 }
 
@@ -151,8 +151,8 @@ func TestChangeNickRejoin(t *testing.T) {
 		ForwardS2C(&irc.Message{Prefix: "alice", Command: "NICK", Params: []string{"eve"}}),
 		ClientDisconnect{},
 		reconnect("eve"),
-		&FromClient{Command: "JOIN", Params: []string{"#sandstorm"}},
-		ManyToClient(joinSeq("eve")),
+		FromClient(&irc.Message{Command: "JOIN", Params: []string{"#sandstorm"}}),
+		ManyMsg(ToClient, joinSeq("eve")),
 	})
 }
 
@@ -161,13 +161,13 @@ func TestClientPingDrop(t *testing.T) {
 		initialConnect("alice"),
 
 		Sleep(pingTime),
-		&ToClient{Command: "PING", Params: []string{"irc-idler"}},
-		&ToServer{Command: "PING", Params: []string{"irc-idler"}},
+		ToClient(&irc.Message{Command: "PING", Params: []string{"irc-idler"}}),
+		ToServer(&irc.Message{Command: "PING", Params: []string{"irc-idler"}}),
 
-		&FromServer{Command: "PONG", Params: []string{"irc-idler"}},
+		FromServer(&irc.Message{Command: "PONG", Params: []string{"irc-idler"}}),
 		Sleep(pingTime),
 
 		&DropClient{},
-		&ToServer{Command: "PING", Params: []string{"irc-idler"}},
+		ToServer(&irc.Message{Command: "PING", Params: []string{"irc-idler"}}),
 	})
 }

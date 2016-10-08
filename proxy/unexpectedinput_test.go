@@ -11,13 +11,13 @@ func TestUnexpected_RPL_TOPIC(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		ClientConnect{},
 		ConnectServer{},
-		&FromServer{
+		FromServer(&irc.Message{
 			Command: irc.RPL_TOPIC,
 			Params:  []string{"alice", "#unexpected", "unexpected topic!"},
-		},
+		}),
 
 		// Should ignore it and keep on trucking:
-		&FromClient{Command: "NICK", Params: []string{"alice"}},
+		FromClient(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
 	})
 }
 
@@ -25,14 +25,14 @@ func TestUnexpected_RPL_NAMEREPLY(t *testing.T) {
 	TraceTest(t, ExpectMany{
 		ClientConnect{},
 		ConnectServer{},
-		&FromServer{
+		FromServer(&irc.Message{
 			Command: irc.RPL_NAMEREPLY,
 			Params: []string{
 				"alice", "=", "#unexpected", "unexpected users",
 			},
-		},
+		}),
 
 		// Should ignore it and keep on trucking:
-		&FromClient{Command: "NICK", Params: []string{"alice"}},
+		FromClient(&irc.Message{Command: "NICK", Params: []string{"alice"}}),
 	})
 }

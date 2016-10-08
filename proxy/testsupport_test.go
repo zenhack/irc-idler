@@ -8,8 +8,8 @@ package proxy
 // TraceTest(t, ExpectMany{
 // 	ClientConnect{},
 // 	ConnectServer{},
-// 	&FromClient{Command: "NICK", Params: []string{"bob"}},
-// 	&ToServer{Command: "NICK", Params: []string{"bob"}},
+// 	FromClient(&irc.Message{Command: "NICK", Params: []string{"bob"}}),
+// 	ToServer(&irc.Message{Command: "NICK", Params: []string{"bob"}}),
 // 	...
 // })
 
@@ -96,20 +96,40 @@ type NestedError struct {
 
 func ForwardC2S(msg *irc.Message) ProxyAction {
 	return ExpectMany{
-		(*FromClient)(msg),
-		(*ToServer)(msg),
+		FromClient(msg),
+		ToServer(msg),
 	}
 }
 
 func ForwardS2C(msg *irc.Message) ProxyAction {
 	return ExpectMany{
-		(*FromServer)(msg),
-		(*ToClient)(msg),
+		FromServer(msg),
+		ToClient(msg),
 	}
 }
 
 func (e *NestedError) Error() string {
 	return fmt.Sprintf("Error in action #%d (%v):\n\n %v", e.Index, e.Ctx, e.Err)
+}
+
+func ExpectFunc(label string, fn func(state *ProxyState, timeout time.Duration) error) ProxyAction {
+	return expectFunc{
+		fn:    fn,
+		label: label,
+	}
+}
+
+type expectFunc struct {
+	label string
+	fn    func(state *ProxyState, timeout time.Duration) error
+}
+
+func (ef expectFunc) String() string {
+	return fmt.Sprintf("ExpectFunc(%q)", ef.label)
+}
+
+func (ef expectFunc) Expect(state *ProxyState, timeout time.Duration) error {
+	return ef.fn(state, timeout)
 }
 
 type ExpectMany []ProxyAction
@@ -156,10 +176,6 @@ type ProxyState struct {
 }
 
 type (
-	ToClient         irc.Message
-	ToServer         irc.Message
-	FromClient       irc.Message
-	FromServer       irc.Message
 	DropClient       struct{}
 	DropServer       struct{}
 	ClientConnect    struct{}
@@ -175,11 +191,6 @@ func (a *ClientDisconnect) String() string { return "&ClientDisconnect{}" }
 func (a *ConnectServer) String() string    { return "&ConnectServer{}" }
 func (a *ServerDisconnect) String() string { return "&ServerDisconnect{}" }
 func (a *DropServer) String() string       { return "&DropServer{}" }
-
-func (m *ToClient) String() string   { return "&ToClient(" + (*irc.Message)(m).String() + ")" }
-func (m *ToServer) String() string   { return "&ToServer(" + (*irc.Message)(m).String() + ")" }
-func (m *FromClient) String() string { return "&FromClient(" + (*irc.Message)(m).String() + ")" }
-func (m *FromServer) String() string { return "&FromServer(" + (*irc.Message)(m).String() + ")" }
 
 func (s Sleep) Expect(state *ProxyState, timeout time.Duration) error {
 	time.Sleep(time.Duration(s))
@@ -296,34 +307,38 @@ func (ds DropServer) Expect(state *ProxyState, timeout time.Duration) error {
 	return dropExpect(state.DropServer, timeout)
 }
 
-func (ts *ToServer) Expect(state *ProxyState, timeout time.Duration) error {
-	return toMsgExpect((*irc.Message)(ts), state.ToServer, timeout)
+func ToServer(msg *irc.Message) ProxyAction {
+	label := fmt.Sprintf("ToServer(%q)", msg)
+	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
+		return toMsgExpect(msg, state.ToServer, timeout)
+	})
 }
 
-func (tc *ToClient) Expect(state *ProxyState, timeout time.Duration) error {
-	return toMsgExpect((*irc.Message)(tc), state.ToClient, timeout)
+func ToClient(msg *irc.Message) ProxyAction {
+	label := fmt.Sprintf("ToClient(%q)", msg)
+	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
+		return toMsgExpect(msg, state.ToClient, timeout)
+	})
 }
 
-func (fs *FromServer) Expect(state *ProxyState, timeout time.Duration) error {
-	return fromMsgExpect((*irc.Message)(fs), state.FromServer, timeout)
+func FromServer(msg *irc.Message) ProxyAction {
+	label := fmt.Sprintf("FromServer(%q)", msg)
+	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
+		return fromMsgExpect(msg, state.FromServer, timeout)
+	})
 }
 
-func (fc *FromClient) Expect(state *ProxyState, timeout time.Duration) error {
-	return fromMsgExpect((*irc.Message)(fc), state.FromClient, timeout)
+func FromClient(msg *irc.Message) ProxyAction {
+	label := fmt.Sprintf("FromClient(%q)", msg)
+	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
+		return fromMsgExpect(msg, state.FromClient, timeout)
+	})
 }
 
 func ManyMsg(convert func(msg *irc.Message) ProxyAction, msgs []*irc.Message) ProxyAction {
 	ret := make(ExpectMany, len(msgs))
 	for i, v := range msgs {
 		ret[i] = convert(v)
-	}
-	return ret
-}
-
-func ManyToClient(msgs []*irc.Message) ProxyAction {
-	ret := make(ExpectMany, len(msgs))
-	for i, v := range msgs {
-		ret[i] = (*ToClient)(v)
 	}
 	return ret
 }
