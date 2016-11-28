@@ -17,6 +17,7 @@ import (
 	ip_capnp "zenhack.net/go/sandstorm/capnp/ip"
 	"zenhack.net/go/sandstorm/grain"
 	"zenhack.net/go/sandstorm/ip"
+	"zenhack.net/go/sandstorm/websession"
 	"zombiezen.com/go/capnproto2"
 )
 
@@ -107,12 +108,14 @@ func main() {
 		err               error
 	)
 	ctx := context.Background()
-	uiView := &webui.UiView{
-		Ctx:     ctx,
-		Backend: backend,
+	handler, err := webui.NewHandler(ctx, backend)
+	if err != nil {
+		logger.Fatalln("Error: ", err)
 	}
-
-	api, err := grain.ConnectAPI(ctx, uiView)
+	api, err := grain.ConnectAPI(
+		ctx,
+		websession.FromHandler(ctx, handler),
+	)
 
 	if err != nil {
 		logger.Fatalln("Error: ", err)

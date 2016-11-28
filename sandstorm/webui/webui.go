@@ -16,9 +16,8 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"zenhack.net/go/sandstorm/capnp/grain"
-	ws_capnp "zenhack.net/go/sandstorm/capnp/websession"
-	"zenhack.net/go/sandstorm/websession"
+	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
+	"zenhack.net/go/sandstorm/grain"
 	"zombiezen.com/go/capnproto2"
 )
 
@@ -58,11 +57,6 @@ type templateContext struct {
 	HaveNetwork bool
 }
 
-type UiView struct {
-	Backend *Backend
-	Ctx     context.Context
-}
-
 func (form *SettingsForm) Validate(xsrfKey string) error {
 	if !xsrftoken.Valid(form.XSRFToken, xsrfKey, "TODO", "/proxy-settings") {
 		return badXSRFToken
@@ -86,15 +80,12 @@ func genXSRFKey() (string, error) {
 	return buf.String(), nil
 }
 
-func (v *UiView) NewSession(args grain.UiView_newSession) error {
-
-	sessionCtx := args.Params.Context()
-
+func NewHandler(ctx context.Context, backend *Backend) (http.Handler, error) {
 	r := mux.NewRouter()
 	// TODO: might make sense to not generate this on every startup:
 	xsrfKey, err := genXSRFKey()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	r.Methods("GET").Path("/").
@@ -105,9 +96,9 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				"/proxy-settings",
 			)
 			indexTpl.Execute(w, &templateContext{
-				HaveNetwork: <-v.Backend.HaveNetwork,
+				HaveNetwork: <-backend.HaveNetwork,
 				Form: &SettingsForm{
-					Config:    <-v.Backend.GetServerConfig,
+					Config:    <-backend.GetServerConfig,
 					XSRFToken: token,
 				},
 			})
@@ -130,7 +121,7 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				w.Write([]byte(err.Error()))
 				return
 			}
-			v.Backend.SetServerConfig <- form.Config
+			backend.SetServerConfig <- form.Config
 			http.Redirect(w, req, "/", http.StatusSeeOther)
 		})
 
@@ -146,9 +137,10 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				w.WriteHeader(400)
 				return
 			}
+			sessionCtx := w.(grain.HasSessionContext).GetSessionContext()
 			results, err := sessionCtx.ClaimRequest(
-				v.Ctx,
-				func(params grain.SessionContext_claimRequest_Params) error {
+				ctx,
+				func(params grain_capnp.SessionContext_claimRequest_Params) error {
 					params.SetRequestToken(string(buf))
 					return nil
 				}).Struct()
@@ -163,7 +155,7 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 				w.WriteHeader(400)
 				return
 			}
-			v.Backend.IpNetworkCaps <- capability
+			backend.IpNetworkCaps <- capability
 			return
 		})
 
@@ -171,26 +163,12 @@ func (v *UiView) NewSession(args grain.UiView_newSession) error {
 		Handler(websocket.Handler(func(conn *websocket.Conn) {
 			// The websocket package closes conn when this function returns,
 			// so we can't return until the client connection is closed.
-			rwcc := newContextRWC(v.Ctx, conn)
-			v.Backend.ClientConns <- rwcc
+			rwcc := newContextRWC(ctx, conn)
+			backend.ClientConns <- rwcc
 			<-rwcc.Done()
 		}))
 
-	session := ws_capnp.WebSession_ServerToClient(websession.FromHandler(v.Ctx, r))
-	args.Results.SetSession(grain.UiSession{Client: session.Client})
-	return nil
-}
-
-func (h UiView) GetViewInfo(p grain.UiView_getViewInfo) error {
-	return nil
-}
-
-func (h UiView) NewRequestSession(p grain.UiView_newRequestSession) error {
-	return nil
-}
-
-func (h UiView) NewOfferSession(p grain.UiView_newOfferSession) error {
-	return nil
+	return r, nil
 }
 
 // A wrapper around io.ReadWriteCloser and a cancellable context, which
