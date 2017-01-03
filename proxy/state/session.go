@@ -5,7 +5,7 @@ import (
 )
 
 // Information about the state of the connection. Note that we store one of these
-// indepentently for both client and server; their views may not always align.
+// independently for both client and server; their views may not always align.
 type Session struct {
 	irc.ClientID
 

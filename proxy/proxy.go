@@ -57,10 +57,10 @@ type Proxy struct {
 	serverConnector Connector
 	err             error
 
-	// Per-channel IRC messages recieved while client is not in the channel.
+	// Per-channel IRC messages received while client is not in the channel.
 	messagelogs storage.Store
 
-	// State of the session before messages in the logs have been recieved.
+	// State of the session before messages in the logs have been received.
 	// TODO: this needs to be persistent if messagelogs is.
 	preLogSession *state.Session
 
@@ -90,11 +90,11 @@ type connection struct {
 	Chan <-chan *irc.Message
 	*state.Session
 
-	// Disconnect if we don't recieve a message first. Only valid if PingSent
+	// Disconnect if we don't receive a message first. Only valid if PingSent
 	// is true.
 	DropDeadline time.Time
 
-	// Send PING if we don't recieve a message first. Only valid if PingSent
+	// Send PING if we don't receive a message first. Only valid if PingSent
 	// is false.
 	PingDeadline time.Time
 
@@ -405,7 +405,7 @@ func (p *Proxy) handleClientEvent(msg *irc.Message, ok bool) {
 		p.dropClient()
 		return
 	}
-	p.logger.Debugf("handleClientEvent(): Recieved message: %q\n", msg)
+	p.logger.Debugf("handleClientEvent(): Received message: %q\n", msg)
 	if err := msg.Validate(); err != nil {
 		p.sendClient((*irc.Message)(err))
 		p.dropClient()
@@ -581,7 +581,7 @@ func (p *Proxy) handleServerEvent(msg *irc.Message, ok bool) {
 
 	// We can mostly just pass these through to the client and it will do the right
 	// thing, but we need to save them for when the client disconnects and then
-	// reconnects, becasue the server won't send them again if it thinks the client
+	// reconnects, because the server won't send them again if it thinks the client
 	// is already connected:
 	case irc.RPL_YOURHOST:
 		p.msgCache.yourhost = msg.Params[1]

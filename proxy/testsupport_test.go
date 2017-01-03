@@ -34,7 +34,7 @@ var (
 	UnexpectedDisconnect = errors.New("Unexpected Disconnect")
 	ExpectedDisconnect   = errors.New("Expected Disconnect")
 
-	// The timeout passed to each Expect() call. This can be overriden
+	// The timeout passed to each Expect() call. This can be overridden
 	// by setting the variable II_TEST_TIMEOUT to a string that can be
 	// parsed by time.ParseDuration
 	//

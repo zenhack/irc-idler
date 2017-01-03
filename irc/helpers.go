@@ -3,7 +3,7 @@ package irc
 // This file defines helpers that make working with messages easier.
 
 // Read all messages from r in a separate go routine. returns a channel via
-// which the messages may be recieved.
+// which the messages may be received.
 func ReadAll(r Reader) <-chan *Message {
 	ch := make(chan *Message)
 	go func() {
