@@ -30,9 +30,7 @@ import (
 )
 
 var (
-	ErrTimeout              = errors.New("Timeout")
-	ErrUnexpectedDisconnect = errors.New("Unexpected Disconnect")
-	ErrExpectedDisconnect   = errors.New("Expected Disconnect")
+	ErrTimeout = errors.New("Timeout")
 
 	// The timeout passed to each Expect() call. This can be overridden
 	// by setting the variable II_TEST_TIMEOUT to a string that can be
