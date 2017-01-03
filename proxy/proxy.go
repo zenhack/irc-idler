@@ -29,16 +29,20 @@ var (
 	errConnectionClosed = errors.New("Connection Closed")
 )
 
+// A Connector establishes an IRC connection.
 type Connector interface {
 	Connect() (irc.ReadWriteCloser, error)
 }
 
+// A DialerConnector is a Connector that uses a Dialer to establish connections
+// to a specific destination.
 type DialerConnector struct {
 	netextra.Dialer
 	Network string
 	Addr    string
 }
 
+// Connect establishes a connection by invoking dc.Dialer.Dial(dc.Network, dc.Addr)
 func (dc *DialerConnector) Connect() (irc.ReadWriteCloser, error) {
 	conn, err := dc.Dial(dc.Network, dc.Addr)
 	if err != nil {
@@ -136,7 +140,7 @@ func (c *connection) shutdown() {
 	*c = *emptyConnection()
 }
 
-// Create a new proxy.
+// NewProxy creates a new proxy.
 //
 // parameters:
 //
@@ -171,7 +175,7 @@ func (p *Proxy) Run() {
 	p.serve()
 }
 
-// Shuts down the daemon, which must be already running. Does not wait for
+// Stop shuts down the daemon, which must be already running. Does not wait for
 // the daemon to shut down completely before returning.
 func (p *Proxy) Stop() {
 	p.stop <- struct{}{}
@@ -185,7 +189,7 @@ func (c *connection) setup(conn irc.ReadWriteCloser) {
 	c.updateDeadlines()
 }
 
-// Accept connections from `l`, and send them on `acceptChan`.
+// AcceptLoop accepts connections from `l`, and sends them on `acceptChan`.
 func AcceptLoop(l net.Listener, acceptChan chan<- irc.ReadWriteCloser, logger *log.Logger) {
 	for {
 		conn, err := l.Accept()

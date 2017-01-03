@@ -30,16 +30,18 @@ var (
 	errIllegalPortNumber = errors.New("Illegal Port Number (must be non-zero)")
 )
 
+// A ServerConfig specifies a server to connect to.
 type ServerConfig struct {
-	Host string
-	Port uint16
-	TLS  bool
+	Host string // Hostname of the server
+	Port uint16 // TCP port number
+	TLS  bool   // Whether to connect via TLS
 }
 
 func (s *ServerConfig) String() string {
 	return net.JoinHostPort(s.Host, fmt.Sprint(s.Port))
 }
 
+// A Backend is an interface for communication between the UI and the backend.
 type Backend struct {
 	IpNetworkCaps                    chan capnp.Pointer
 	GetServerConfig, SetServerConfig chan ServerConfig
@@ -47,6 +49,7 @@ type Backend struct {
 	HaveNetwork                      chan bool
 }
 
+// A SettingsForm a set of values for the "settings" form on the web ui.
 type SettingsForm struct {
 	Config    ServerConfig
 	XSRFToken string
@@ -57,6 +60,8 @@ type templateContext struct {
 	HaveNetwork bool
 }
 
+// Validate the SettingsForm. This both sanity-checks the ServerConfig and
+// verifies the XSRF token.
 func (form *SettingsForm) Validate(xsrfKey string) error {
 	if !xsrftoken.Valid(form.XSRFToken, xsrfKey, "TODO", "/proxy-settings") {
 		return errBadXSRFToken
@@ -80,6 +85,8 @@ func genXSRFKey() (string, error) {
 	return buf.String(), nil
 }
 
+// NewHandler returns a new http.Handler serving the web ui and communicating
+// with 'backend'.
 func NewHandler(ctx context.Context, backend *Backend) (http.Handler, error) {
 	r := mux.NewRouter()
 	// TODO: might make sense to not generate this on every startup:

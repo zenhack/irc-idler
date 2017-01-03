@@ -30,9 +30,9 @@ import (
 )
 
 var (
-	Timeout              = errors.New("Timeout")
-	UnexpectedDisconnect = errors.New("Unexpected Disconnect")
-	ExpectedDisconnect   = errors.New("Expected Disconnect")
+	ErrTimeout              = errors.New("Timeout")
+	ErrUnexpectedDisconnect = errors.New("Unexpected Disconnect")
+	ErrExpectedDisconnect   = errors.New("Expected Disconnect")
 
 	// The timeout passed to each Expect() call. This can be overridden
 	// by setting the variable II_TEST_TIMEOUT to a string that can be
@@ -195,7 +195,7 @@ func Drop(endpoint Endpoint) ProxyAction {
 		func(state *ProxyState, timeout time.Duration) error {
 			select {
 			case <-time.After(timeout):
-				return Timeout
+				return ErrTimeout
 			case <-state.DropChans[endpoint]:
 				return nil
 			}
@@ -253,7 +253,7 @@ func (state *ProxyState) initEndpoint(endpoint Endpoint, timeout time.Duration) 
 		state.Disconnect[endpoint] = rwc.CancelFunc
 		return nil
 	case <-time.After(timeout):
-		return Timeout
+		return ErrTimeout
 	}
 }
 
@@ -264,7 +264,7 @@ func Connect(endpoint Endpoint) ProxyAction {
 				// wait for the daemon to ask for a connection
 				select {
 				case <-time.After(timeout):
-					return Timeout
+					return ErrTimeout
 				case <-state.ConnectRequests:
 				}
 			}
@@ -275,7 +275,7 @@ func Connect(endpoint Endpoint) ProxyAction {
 func fromMsgExpect(msg *irc.Message, msgChan chan<- *irc.Message, timeout time.Duration) error {
 	select {
 	case <-time.After(timeout):
-		return Timeout
+		return ErrTimeout
 	case msgChan <- msg:
 		return nil
 	}
@@ -286,7 +286,7 @@ func To(endpoint Endpoint, expected *irc.Message) ProxyAction {
 	return ExpectFunc(label, func(state *ProxyState, timeout time.Duration) error {
 		select {
 		case <-time.After(timeout):
-			return Timeout
+			return ErrTimeout
 		case actual := <-state.ToChans[endpoint]:
 			if !expected.Eq(actual) {
 				return &MsgsDiffer{
@@ -313,7 +313,7 @@ func UnorderedTo(endpoint Endpoint, expected []*irc.Message) ProxyAction {
 			for range expected {
 				select {
 				case <-time.After(timeout):
-					return Timeout
+					return ErrTimeout
 				case msg := <-state.ToChans[endpoint]:
 					have[msg.String()] = true
 				}

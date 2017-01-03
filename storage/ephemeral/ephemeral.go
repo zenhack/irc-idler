@@ -33,7 +33,7 @@ type cursor struct {
 	i int
 }
 
-// Return a new memory-backed Store.
+// NewStore returns a new memory-backed Store.
 func NewStore() storage.Store {
 	return &store{channels: make(map[string][]*irc.Message)}
 }
@@ -59,9 +59,8 @@ func (l *channelLog) Clear() error {
 func (l *channelLog) Replay() (storage.LogCursor, error) {
 	if l.store.channels[l.name] == nil {
 		return storage.EmptyCursor, nil
-	} else {
-		return &cursor{l.store.channels[l.name], 0}, nil
 	}
+	return &cursor{l.store.channels[l.name], 0}, nil
 }
 
 func (c *cursor) Next() {
@@ -71,9 +70,8 @@ func (c *cursor) Next() {
 func (c *cursor) Get() (*irc.Message, error) {
 	if c.i >= len(c.msgs) {
 		return nil, io.EOF
-	} else {
-		return c.msgs[c.i], nil
 	}
+	return c.msgs[c.i], nil
 }
 
 func (c *cursor) Close() error {

@@ -1,4 +1,4 @@
-// Testing utilities for implementations of Store
+// Package testing provides utilities for testing implementations of Store
 package testing
 
 import (
@@ -15,8 +15,8 @@ import (
 	"unsafe"
 )
 
-// A randomized black-box test for store implementations. It does the
-// following:
+// RandTest is a randomized black-box test for store implementations.
+// It does the following:
 //
 // * Insert random values into the logs
 // * Verify that reading back those values succeeds

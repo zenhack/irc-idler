@@ -17,18 +17,18 @@ import (
 )
 
 var (
-	// An "empty" cursor, whose Get() method always returns (nil, io.EOF).
-	// Its Close() returns nil and does nothing.
+	// EmptyCursor is an "empty" cursor, whose Get() method always
+	// returns (nil, io.EOF). Its Close() returns nil and does nothing.
 	EmptyCursor LogCursor = emptyCursor{}
 )
 
-// A data store for logged messages
+// A Store is a data store for logged messages
 type Store interface {
 	// Get a ChannelLog for the named channel
 	GetChannel(name string) (ChannelLog, error)
 }
 
-// A (sequential) log for a particular channel.
+// A ChannelLog is a (sequential) log for a particular channel.
 type ChannelLog interface {
 
 	// Append a message to the end of log.
@@ -41,7 +41,7 @@ type ChannelLog interface {
 	Clear() error
 }
 
-// A cursor into the log.
+// A LogCursor is a cursor into a ChannelLog.
 type LogCursor interface {
 	// Get the current message pointed to by the cursor. If the cursor is past the end of the
 	// log, returns (nil, io.EOF).

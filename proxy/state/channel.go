@@ -5,6 +5,7 @@ import (
 	"zenhack.net/go/irc-idler/irc"
 )
 
+// An AllChannelStates tracks the state of all channels we're in.
 type AllChannelStates interface {
 	State
 	GetChannel(channelName string) *ChannelState
@@ -57,7 +58,7 @@ func (s *mapChannelStates) UpdateFromServer(msg *irc.Message) {
 
 }
 
-// State of the channel
+// A ChannelState tracks state for a single channel.
 type ChannelState struct {
 	Topic string // the topic for the channel, if any.
 
@@ -72,6 +73,8 @@ type ChannelState struct {
 	users map[string]bool
 }
 
+// NewChannelState creates a new ChannelState with initial topic `topic` and no
+// users present.
 func NewChannelState(topic string) *ChannelState {
 	return &ChannelState{
 		Topic: topic,

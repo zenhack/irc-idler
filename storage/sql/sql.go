@@ -1,6 +1,5 @@
-// An SQL database backed implementation of storage.Store.
-//
-// This package is not actually implemented yet.
+// Package sql provides an implementation of storage.Store on top of an SQL
+// database.
 package sql
 
 import (
@@ -26,7 +25,7 @@ type cursor struct {
 	msg  *irc.Message
 }
 
-// Return a new store backed by the database `db`.
+// NewStore returns a new store backed by the database `db`.
 func NewStore(db *sql.DB) storage.Store {
 	return &store{db: db}
 }
