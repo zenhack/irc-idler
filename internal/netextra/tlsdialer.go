@@ -26,6 +26,7 @@ func (d *TLSDialer) Dial(network, addr string) (net.Conn, error) {
 	tlsConn := tls.Client(conn, cfg)
 	err = tlsConn.Handshake()
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 	return tlsConn, nil
