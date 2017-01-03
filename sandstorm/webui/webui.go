@@ -26,8 +26,8 @@ const staticPath = "/opt/app/sandstorm/webui/"
 var (
 	indexTpl = template.Must(template.ParseFiles(staticPath + "templates/index.html"))
 
-	badXSRFToken      = errors.New("Bad XSRF Token")
-	illegalPortNumber = errors.New("Illegal Port Number (must be non-zero)")
+	errBadXSRFToken      = errors.New("Bad XSRF Token")
+	errIllegalPortNumber = errors.New("Illegal Port Number (must be non-zero)")
 )
 
 type ServerConfig struct {
@@ -59,10 +59,10 @@ type templateContext struct {
 
 func (form *SettingsForm) Validate(xsrfKey string) error {
 	if !xsrftoken.Valid(form.XSRFToken, xsrfKey, "TODO", "/proxy-settings") {
-		return badXSRFToken
+		return errBadXSRFToken
 	}
 	if form.Config.Port == 0 {
-		return illegalPortNumber
+		return errIllegalPortNumber
 	}
 	return nil
 }

@@ -2,9 +2,10 @@ package netextra
 
 import "net"
 
+// Direct is a Dialer which just calls net.Dial.
 var Direct = direct{}
 
-// This is the same as the Dialer interface from "golang.org/x/net/proxy".
+// Dialer is the same as the Dialer interface from "golang.org/x/net/proxy".
 // the Dial method has the same semantics as net.Dial from the standard
 // library.
 //

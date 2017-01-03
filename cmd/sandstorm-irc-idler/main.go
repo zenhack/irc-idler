@@ -49,9 +49,8 @@ func loadServerConfig() (webui.ServerConfig, error) {
 	if err != nil {
 		// Make sure we return the zero value on failure:
 		return webui.ServerConfig{}, err
-	} else {
-		return ret, nil
 	}
+	return ret, nil
 }
 
 func saveIpNetwork(ctx context.Context, api grain_capnp.SandstormApi, ipNetworkCap capnp.Pointer) error {

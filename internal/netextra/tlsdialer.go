@@ -5,12 +5,15 @@ import (
 	"net"
 )
 
-// Dialer that speaks TLS over the `Base` Dialer, verifying the hostname
+// A TLSDialer speaks TLS over the `Base` Dialer, verifying the hostname
 // it is passed.
 type TLSDialer struct {
 	Base Dialer
 }
 
+// Invoke d.Base.Dial, and then establish a TLS session over the resulting
+// connection. If any error occurs during the handshake, the connection will
+// be closed and the error will be returned to the caller.
 func (d *TLSDialer) Dial(network, addr string) (net.Conn, error) {
 	host, _, err := net.SplitHostPort(addr)
 	cfg := &tls.Config{
