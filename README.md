@@ -1,4 +1,5 @@
 [![Travis CI Build Status][ci-img]][ci]
+[![Go Report Card][go-rep-img]][go-rep]
 
 IRC Idler is a program which idles in IRC for you. [Sandstorm][1] will
 be the preferred way of running it, though it will work in traditional
@@ -114,3 +115,5 @@ available for the non-sandstorm version as well.
 [3]: https://github.com/zenhack/go.sandstorm
 [ci-img]: https://api.travis-ci.org/zenhack/irc-idler.svg?branch=master
 [ci]: https://travis-ci.org/zenhack/irc-idler
+[go-rep-img]: https://goreportcard.com/badge/github.com/zenhack/irc-idler
+[go-rep]: https://goreportcard.com/report/github.com/zenhack/irc-idler
