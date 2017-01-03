@@ -350,7 +350,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 
 			nick := p.server.Session.ClientID.Nick
 			messages := []*irc.Message{
-				&irc.Message{
+				{
 					Prefix:  p.serverPrefix,
 					Command: irc.RPL_WELCOME,
 					Params: []string{
@@ -359,7 +359,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 							p.server.Session.ClientID.String(),
 					},
 				},
-				&irc.Message{
+				{
 					Prefix:  p.serverPrefix,
 					Command: irc.RPL_YOURHOST,
 					Params: []string{
@@ -367,7 +367,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 						p.msgCache.yourhost,
 					},
 				},
-				&irc.Message{
+				{
 					Prefix:  p.serverPrefix,
 					Command: irc.RPL_CREATED,
 					Params: []string{
@@ -375,7 +375,7 @@ func (p *Proxy) handleHandshakeMessage(msg *irc.Message) {
 						p.msgCache.created,
 					},
 				},
-				&irc.Message{
+				{
 					Prefix:  p.serverPrefix,
 					Command: irc.RPL_MYINFO,
 					Params:  append([]string{nick}, p.msgCache.myinfo...),

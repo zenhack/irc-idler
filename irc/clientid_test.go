@@ -11,12 +11,12 @@ type testCase struct {
 }
 
 var cases = []testCase{
-	testCase{"", ClientID{}, true},
-	testCase{"nick!user@host", ClientID{"", "nick", "user", "host"}, false},
-	testCase{"nick", ClientID{"", "nick", "", ""}, false},
-	testCase{"@nick", ClientID{"@", "nick", "", ""}, false},
-	testCase{"+nick", ClientID{"+", "nick", "", ""}, false},
-	testCase{"^nick", ClientID{"", "^nick", "", ""}, false},
+	{"", ClientID{}, true},
+	{"nick!user@host", ClientID{"", "nick", "user", "host"}, false},
+	{"nick", ClientID{"", "nick", "", ""}, false},
+	{"@nick", ClientID{"@", "nick", "", ""}, false},
+	{"+nick", ClientID{"+", "nick", "", ""}, false},
+	{"^nick", ClientID{"", "^nick", "", ""}, false},
 }
 
 // For each of our test cases, verify that:

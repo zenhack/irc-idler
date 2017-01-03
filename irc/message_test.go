@@ -9,9 +9,9 @@ import (
 
 // example data for the tests
 var sampleMessages = []*Message{
-	&Message{Command: "PRIVMSG", Params: []string{"##cool_topic", "Hello!"}},
-	&Message{Command: "PING", Params: []string{}},
-	&Message{Prefix: "bob", Command: "STUFF", Params: []string{"THINGS"}},
+	{Command: "PRIVMSG", Params: []string{"##cool_topic", "Hello!"}},
+	{Command: "PING", Params: []string{}},
+	{Prefix: "bob", Command: "STUFF", Params: []string{"THINGS"}},
 }
 
 var sampleUnparsedMessages = []string{

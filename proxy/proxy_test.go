@@ -84,10 +84,10 @@ func joinSeq(forward bool, nick string) ProxyAction {
 		convert           func(*irc.Message) ProxyAction
 	)
 	namereplyMsgs := []*irc.Message{
-		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+		{Command: irc.RPL_NAMEREPLY, Params: []string{
 			nick, "=", "#sandstorm", nick,
 		}},
-		&irc.Message{Command: irc.RPL_NAMEREPLY, Params: []string{
+		{Command: irc.RPL_NAMEREPLY, Params: []string{
 			nick, "=", "#sandstorm", "bob",
 		}},
 	}

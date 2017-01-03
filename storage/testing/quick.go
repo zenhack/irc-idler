@@ -58,7 +58,7 @@ func fillStore(m map[string][]*irc.Message, store storage.Store) {
 }
 
 func checkClear(m map[string][]*irc.Message, store storage.Store) bool {
-	for k, _ := range m {
+	for k := range m {
 		log, _ := store.GetChannel(k)
 		log.Clear()
 		cursor, _ := log.Replay()

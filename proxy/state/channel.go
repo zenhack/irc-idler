@@ -86,7 +86,7 @@ func (s *ChannelState) UpdateFromClient(msg *irc.Message) {
 // Return a slice of nicks for users in the channel
 func (s *ChannelState) Users() []string {
 	ret := make([]string, 0, len(s.users))
-	for nick, _ := range s.users {
+	for nick := range s.users {
 		ret = append(ret, nick)
 	}
 	return ret
