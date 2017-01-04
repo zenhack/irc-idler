@@ -69,6 +69,7 @@ func AutoPong(ctx context.Context, in <-chan *irc.Message, forward, reply chan<-
 // AutoPing forwards messages from `in` to `forward`. If no message is received on `in`
 // for at least `pingTime`, a PING will be sent on `reply`. If after another duration of
 // `pingTime`, there have still been no messages recevied, disconnect will be called.
+// PONG messages will *not* be forwarded.
 func AutoPing(ctx context.Context, disconnect context.CancelFunc, pingTime time.Duration,
 	in <-chan *irc.Message, forward, reply chan<- *irc.Message) {
 	pingSent := false
