@@ -1,7 +1,9 @@
-package irc
+// Package filters provides "filters" for IRC messages, useful for common processing tasks.
+package filters
 
 import (
 	"time"
+	"zenhack.net/go/irc-idler/irc"
 )
 
 // RateLimit copies src to dst, rate-limiting the flow, as follows:
@@ -13,7 +15,7 @@ import (
 //   increases.
 //
 // When src is closed, RateLimit will close dst and then return.
-func RateLimit(src <-chan *Message, dst chan<- *Message, initQuota, maxQuota int, refresh time.Duration) {
+func RateLimit(src <-chan *irc.Message, dst chan<- *irc.Message, initQuota, maxQuota int, refresh time.Duration) {
 	left := maxQuota
 	ticker := time.NewTicker(refresh)
 	defer ticker.Stop()

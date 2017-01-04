@@ -1,13 +1,14 @@
-package irc
+package filters
 
 import (
 	"testing"
 	"time"
+	"zenhack.net/go/irc-idler/irc"
 )
 
 func TestRateLimit(t *testing.T) {
-	in := make(chan *Message)
-	out := make(chan *Message)
+	in := make(chan *irc.Message)
+	out := make(chan *irc.Message)
 	initQuota := 10
 	maxQuota := 10
 	numMessages := 30
@@ -16,7 +17,7 @@ func TestRateLimit(t *testing.T) {
 	start := time.Now()
 	go func() {
 		for i := 0; i < numMessages; i++ {
-			in <- &Message{Command: "PING", Params: []string{}}
+			in <- &irc.Message{Command: "PING", Params: []string{}}
 		}
 		close(in)
 	}()
