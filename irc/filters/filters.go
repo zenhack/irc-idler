@@ -2,6 +2,7 @@
 package filters
 
 import (
+	"golang.org/x/net/context"
 	"time"
 	"zenhack.net/go/irc-idler/irc"
 )
@@ -39,4 +40,74 @@ func RateLimit(src <-chan *irc.Message, dst chan<- *irc.Message, initQuota, maxQ
 			}
 		}
 	}
+}
+
+// AutoPong automatically responds to PINGs sent on `in`, with PONGs sent on `reply`. It forwards
+// other messages on `forward`.
+func AutoPong(ctx context.Context, in <-chan *irc.Message, forward, reply chan<- *irc.Message) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-in:
+			var dest chan<- *irc.Message
+			if msg.Command == "PING" {
+				dest = reply
+				msg.Command = "PONG"
+			} else {
+				dest = forward
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case dest <- msg:
+			}
+		}
+	}
+}
+
+// AutoPing forwards messages from `in` to `forward`. If no message is received on `in`
+// for at least `pingTime`, a PING will be sent on `reply`. If after another duration of
+// `pingTime`, there have still been no messages recevied, disconnect will be called.
+func AutoPing(ctx context.Context, disconnect context.CancelFunc, pingTime time.Duration,
+	in <-chan *irc.Message, forward, reply chan<- *irc.Message) {
+	pingSent := false
+	timer := time.NewTimer(pingTime)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-in:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(pingTime)
+			pingSent = false
+			if msg.Command == "PONG" {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case forward <- msg:
+			}
+		case <-timer.C:
+			if pingSent {
+				disconnect()
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case reply <- &irc.Message{
+				Command: "PING",
+				Params:  []string{"ping"},
+			}:
+				timer.Reset(pingTime)
+				pingSent = true
+			}
+		}
+	}
+
 }
