@@ -170,11 +170,6 @@ func NewProxy(
 	}
 }
 
-// Run the proxy daemon. Returns when the daemon shuts down.
-func (p *Proxy) Run() {
-	p.serve()
-}
-
 // Stop shuts down the daemon, which must be already running. Does not wait for
 // the daemon to shut down completely before returning.
 func (p *Proxy) Stop() {
@@ -240,24 +235,24 @@ func (p *Proxy) sendClient(msg *irc.Message) error {
 	return err
 }
 
-// main server loop
-func (p *Proxy) serve() {
+// Run the proxy daemon. Returns when the daemon shuts down.
+func (p *Proxy) Run() {
 	p.logger.Infoln("Proxy starting up")
 	ticker := time.NewTicker(pingTime)
 	defer ticker.Stop()
 	for {
-		p.logger.Debugln("serve(): Top of loop")
+		p.logger.Debugln("Run(): Top of loop")
 		select {
 		case <-p.stop:
 			p.logger.Infoln("Proxy shutting down")
 			p.reset()
 			return
 		case msg, ok := <-p.client.Chan:
-			p.logger.Debugln("serve(): Got client event")
+			p.logger.Debugln("Run(): Got client event")
 			p.client.updateDeadlines()
 			p.handleClientEvent(msg, ok)
 		case msg, ok := <-p.server.Chan:
-			p.logger.Debugln("serve(): Got server event")
+			p.logger.Debugln("Run(): Got server event")
 			p.server.updateDeadlines()
 			p.handleServerEvent(msg, ok)
 		case <-ticker.C:
@@ -270,7 +265,7 @@ func (p *Proxy) serve() {
 				func() { p.reset() },
 				func(msg *irc.Message) { p.sendServer(msg) })
 		case clientConn := <-p.clientConns:
-			p.logger.Debugln("serve(): Got client connection")
+			p.logger.Debugln("Run(): Got client connection")
 			// A client connected. We boot the old one, if any:
 			p.dropClient()
 
