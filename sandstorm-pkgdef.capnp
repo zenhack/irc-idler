@@ -19,7 +19,7 @@ const pkgdef :Spk.PackageDefinition = (
 
     appTitle = (defaultText = "IRC Idler"),
 
-    appVersion = 18,  # Increment this for every release.
+    appVersion = 19,  # Increment this for every release.
 
     appMarketingVersion = (defaultText = "Alpha 2"),
     # Human-readable representation of appVersion. Should match the way you
@@ -231,11 +231,12 @@ const pkgdef :Spk.PackageDefinition = (
 
 const myCommand :Spk.Manifest.Command = (
   # Here we define the command used to start up your server.
-  argv = ["/opt/app/.sandstorm/gopath/bin/sandstorm-irc-idler"],
+  argv = ["/cmd/sandstorm-irc-idler/sandstorm-irc-idler"],
   environ = [
     # Note that this defines the *entire* environment seen by your app.
     (key = "PATH", value = "/usr/local/bin:/usr/bin:/bin"),
     (key = "SANDSTORM", value = "1"),
+    (key = "II_STATIC_ASSET_PATH", value = "/sandstorm/webui/"),
     # Export SANDSTORM=1 into the environment, so that apps running within Sandstorm
     # can detect if $SANDSTORM="1" at runtime, switching UI and/or backend to use
     # the app's Sandstorm-specific integration code.

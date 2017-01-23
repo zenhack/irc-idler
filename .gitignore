@@ -1,5 +1,4 @@
-/.sandstorm/sandstorm-files.list
-/.sandstorm/gopath
+/sandstorm-files.list
 cover.out
 *.spk
 *.swp

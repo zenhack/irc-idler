@@ -16,15 +16,15 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
 	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
 	"zenhack.net/go/sandstorm/grain"
 	"zombiezen.com/go/capnproto2"
 )
 
-const staticPath = "/opt/app/sandstorm/webui/"
-
 var (
-	indexTpl = template.Must(template.ParseFiles(staticPath + "templates/index.html"))
+	staticPath = os.Getenv("II_STATIC_ASSET_PATH")
+	indexTpl   = template.Must(template.ParseFiles(staticPath + "templates/index.html"))
 
 	errBadXSRFToken      = errors.New("Bad XSRF Token")
 	errIllegalPortNumber = errors.New("Illegal Port Number (must be non-zero)")
