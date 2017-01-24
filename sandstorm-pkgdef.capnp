@@ -19,7 +19,7 @@ const pkgdef :Spk.PackageDefinition = (
 
     appTitle = (defaultText = "IRC Idler"),
 
-    appVersion = 19,  # Increment this for every release.
+    appVersion = 21,  # Increment this for every release.
 
     appMarketingVersion = (defaultText = "Alpha 2"),
     # Human-readable representation of appVersion. Should match the way you
@@ -152,7 +152,18 @@ const pkgdef :Spk.PackageDefinition = (
   # `spk dev` will write a list of all the files your app uses to this file.
   # You should review it later, before shipping your app.
 
-  alwaysInclude = [],
+  alwaysInclude = [
+    # Need to include the cert bundle for TLS to work. Exactly where it is
+    # Varies from system to system. The Go standard library will look in
+    # /etc/pki and /etc/ssl. at least Archlinux symlinks things in /etc/ssl
+    # to /etc/ca-certificates.
+    #
+    # Note that etc/pki is *not* included here, despite the above, since
+    # spk pack will complain if the file is absent. As a result, we may not
+    # work on some redhat-based systems.
+    "etc/ssl",
+    "etc/ca-certificates"
+  ],
   # Fill this list with more names of files or directories that should be
   # included in your package, even if not listed in sandstorm-files.list.
   # Use this to force-include stuff that you know you need but which may
