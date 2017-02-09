@@ -47,111 +47,120 @@
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/activity",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/grain",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/identity",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/ip",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/powerbox",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/supervisor",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/util",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/capnp/websession",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/grain",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/internal/errors",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
-		},
-		{
-			"ImportPath": "zenhack.net/go/sandstorm/internal/iocommon",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/ip",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/util",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zenhack.net/go/sandstorm/websession",
-			"Rev": "28f30e1a96d1f2d0b63cf7347b7c7755f00a40b9"
+			"Rev": "d3d00b72fafb6c1b725c825be930b36b6977b369"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/encoding/text",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/internal/fulfiller",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/internal/nodemap",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/internal/packed",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/internal/queue",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/rpc",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/rpc/internal/refcount",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/schemas",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/server",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/std/capnp/persistent",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/std/capnp/rpc",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		},
 		{
 			"ImportPath": "zombiezen.com/go/capnproto2/std/capnp/schema",
-			"Rev": "f5e317386119b272c5b45e11f4884dd7519cbbef"
+			"Comment": "v2.12.4",
+			"Rev": "a094e8b41eb423fd4114149c55bbbc345aefd1a3"
 		}
 	]
 }
