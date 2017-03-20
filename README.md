@@ -1,6 +1,16 @@
 [![Travis CI Build Status][ci-img]][ci]
 [![Go Report Card][go-rep-img]][go-rep]
 
+# DEPRECATED
+
+IRC Idler is unmaintained and deprecated in favor of sandstorm-znc:
+
+<https://github.com/zenhack/sandstorm-znc>
+
+Please use that instead; I'll leave this here for posterity.
+
+---
+
 IRC Idler is a program which idles in IRC for you. [Sandstorm][1] will
 be the preferred way of running it, though it will work in traditional
 environments as well.
