@@ -111,9 +111,8 @@ func main() {
 	if err != nil {
 		logger.Fatalln("Error: ", err)
 	}
-	api, err := grain.ConnectAPI(
-		ctx,
-		websession.FromHandler(ctx, handler),
+	api, err := grain.ConnectAPI(ctx,
+		grain_capnp.UiView_ServerToClient(websession.FromHandler(handler)),
 	)
 
 	if err != nil {

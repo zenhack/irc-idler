@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"os"
 	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
-	"zenhack.net/go/sandstorm/grain"
+	grain_ctx "zenhack.net/go/sandstorm/grain/context"
 	"zombiezen.com/go/capnproto2"
 )
 
@@ -144,7 +144,7 @@ func NewHandler(ctx context.Context, backend *Backend) (http.Handler, error) {
 				w.WriteHeader(400)
 				return
 			}
-			sessionCtx := w.(grain.HasSessionContext).GetSessionContext()
+			sessionCtx := grain_ctx.GetSessionContext(req.Context())
 			results, err := sessionCtx.ClaimRequest(
 				ctx,
 				func(params grain_capnp.SessionContext_claimRequest_Params) error {
